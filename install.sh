@@ -109,6 +109,8 @@ set_nix_mirror_if_needed() {
   read -r use_mirror
   use_mirror=${use_mirror:-n}
   if [[ "$use_mirror" =~ ^[Yy]$ ]]; then
+    export NIX_USER_CHROOT_MIRROR="gitee"
+    export NIX_INSTALL_URL="https://mirrors.tuna.tsinghua.edu.cn/nix/latest/install"
     local nix_conf_dir="${HOME}/.config/nix"
     local nix_conf_file="${nix_conf_dir}/nix.conf"
     mkdir -p "$nix_conf_dir"
@@ -119,6 +121,9 @@ set_nix_mirror_if_needed() {
     fi
     echo_color "$GREEN" "Configured Nix to use Tsinghua mirror."
     echo "You can edit ${nix_conf_file} to adjust this setting."
+  else
+    export NIX_USER_CHROOT_MIRROR="github"
+    export NIX_INSTALL_URL="https://nixos.org/nix/install"
   fi
 }
 
@@ -156,11 +161,19 @@ main() {
     print_success "Created directory $local_bin_dir"
   fi
 
+  set_nix_mirror_if_needed
+
   # Step 2: Download nix-user-chroot
   print_step "Downloading nix-user-chroot"
   local nix_user_chroot_filename="nix-user-chroot-bin-${nix_user_chroot_version}-${arch}"
-  local nix_user_chroot_url="https://github.com/nix-community/nix-user-chroot/releases/download/${nix_user_chroot_version}/${nix_user_chroot_filename}"
   local nix_user_chroot_path="${local_bin_dir}/nix-user-chroot"
+  local nix_user_chroot_url
+
+  if [ "${NIX_USER_CHROOT_MIRROR:-github}" = "gitee" ]; then
+    nix_user_chroot_url="https://gitee.com/wangshuyu1999/nix-user-chroot/releases/download/${nix_user_chroot_version}/${nix_user_chroot_filename}"
+  else
+    nix_user_chroot_url="https://github.com/nix-community/nix-user-chroot/releases/download/${nix_user_chroot_version}/${nix_user_chroot_filename}"
+  fi
 
   echo "Architecture detected: ${arch}"
   echo "Downloading from: ${nix_user_chroot_url}"
@@ -185,7 +198,7 @@ main() {
   # Step 4: Install Nix in rootless mode using nix-user-chroot
   print_step "Installing Nix in rootless mode"
   if [ ! -d "${HOME}/.nix-profile" ]; then
-    "$nix_user_chroot_path" "$nix_dir" bash -c "curl -L https://nixos.org/nix/install | bash"
+    "$nix_user_chroot_path" "$nix_dir" bash -c "curl -L ${NIX_INSTALL_URL} | bash"
     print_success "Nix installed in rootless mode"
   else
     echo "Nix already installed in ~/.nix-profile, skipping Nix installation."
@@ -432,8 +445,6 @@ EOF
   print_success "Created DevBox installation script: ${devbox_install_script}"
   print_success "Created permanent backup at: ${permanent_devbox_install_script}"
   
-  # Step 7: Set Nix mirror if needed
-  set_nix_mirror_if_needed
   
   echo ""
   echo_color "$BOLD" "Next: Activate Nix Environment and Install DevBox"
