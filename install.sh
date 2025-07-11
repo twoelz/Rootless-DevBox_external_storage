@@ -105,7 +105,7 @@ create_temp_dir() {
 # Set Nix mirror if needed
 set_nix_mirror_if_needed() {
   echo ""
-  echo_color "$YELLOW" "Are you located in mainland China and want to use the Tsinghua Nix mirror for faster downloads? [y/N]"
+  echo_color "$YELLOW" "Are you located in mainland China and want to use the SJTU Nix mirror for faster downloads? [y/N]"
   read -r use_mirror
   use_mirror=${use_mirror:-n}
   if [[ "$use_mirror" =~ ^[Yy]$ ]]; then
@@ -115,11 +115,11 @@ set_nix_mirror_if_needed() {
     local nix_conf_file="${nix_conf_dir}/nix.conf"
     mkdir -p "$nix_conf_dir"
     if grep -q '^substituters =' "$nix_conf_file" 2>/dev/null; then
-      sed -i 's|^substituters =.*|substituters = https://mirrors.tuna.tsinghua.edu.cn/nix-channels/store https://cache.nixos.org/|' "$nix_conf_file"
+      sed -i 's|^substituters =.*|substituters = https://mirror.sjtu.edu.cn/nix-channels/store https://cache.nixos.org/|' "$nix_conf_file"
     else
-      echo "substituters = https://mirrors.tuna.tsinghua.edu.cn/nix-channels/store https://cache.nixos.org/" >> "$nix_conf_file"
+      echo "substituters = https://mirror.sjtu.edu.cn/nix-channels/store https://cache.nixos.org/" >> "$nix_conf_file"
     fi
-    echo_color "$GREEN" "Configured Nix to use Tsinghua mirror."
+    echo_color "$GREEN" "Configured Nix to use SJTU mirror."
     echo "You can edit ${nix_conf_file} to adjust this setting."
   else
     export NIX_USER_CHROOT_MIRROR="github"
