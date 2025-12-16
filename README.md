@@ -1,6 +1,7 @@
-# Rootless-DevBox
+# Rootless-DevBox (with specific nix folders)
 
-A simple, automated solution for installing Devbox in a rootless environment without requiring sudo or root privileges.
+A simple, automated solution for installing Devbox in a rootless environment without requiring sudo or root privileges. Original version from: https://github.com/nebstudio/Rootless-DevBox.
+This fork by https://github.com/twoelz just adds a script to setup folders for nix.
 
 [![GitHub License](https://img.shields.io/github/license/nebstudio/Rootless-DevBox)](https://github.com/nebstudio/Rootless-DevBox/blob/main/LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/nebstudio/Rootless-DevBox?style=social)](https://github.com/nebstudio/Rootless-DevBox/stargazers)
@@ -44,8 +45,9 @@ chmod +x rootless-devbox-installer.sh
 
 ## How it Works
 
-Rootless-DevBox sets up your environment in 3 main steps:
+Rootless-DevBox (with set folders) sets up your environment in 4 main steps:
 
+0. Runs a script to setup nix folders/directories in a separate address.
 1. **Install nix-user-chroot**: Downloads and configures a tool that creates a userspace chroot environment
 2. **Create nix environment**: Sets up a containerized Nix environment in your user directory
 3. **Install Devbox**: Installs Devbox within this environment so you can use it without root
