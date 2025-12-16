@@ -7,7 +7,7 @@ This fork by https://github.com/twoelz just adds a script to setup folders for n
 [![GitHub Stars](https://img.shields.io/github/stars/nebstudio/Rootless-DevBox?style=social)](https://github.com/nebstudio/Rootless-DevBox/stargazers)
 [![GitHub Issues](https://img.shields.io/github/issues/nebstudio/Rootless-DevBox)](https://github.com/nebstudio/Rootless-DevBox/issues)
 
-## What is Rootless-DevBox?
+## What is Rootless-DevBox (with specific nix folders)?
 
 Rootless-DevBox is a project that enables users to install and use [Devbox](https://github.com/jetify-com/devbox) in environments where they don't have root access, such as shared hosting, university systems, or corporate environments with restricted permissions. It leverages [nix-user-chroot](https://github.com/nix-community/nix-user-chroot) to create a containerized environment where Nix and Devbox can run without requiring elevated privileges.
 
