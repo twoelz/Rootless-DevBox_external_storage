@@ -81,27 +81,48 @@ clean_shell_rc() {
     return
   fi
   
-  # Check if file contains Rootless-DevBox source line
-  local shared_config_bash="${HOME}/.config/rootless-devbox/env.sh"
-  local shared_config_fish="${HOME}/.config/rootless-devbox/env.fish"
-  
-  if ! grep -qE "(source ${shared_config_bash}|\\. ${shared_config_bash}|source ${shared_config_fish}|# Rootless-DevBox configuration)" "$rc_file_expanded"; then
+  # Check if file contains ANY Rootless-DevBox markers
+  if ! grep -qE "(# Rootless-DevBox|# Added by Rootless-DevBox)" "$rc_file_expanded"; then
     echo "  No Rootless-DevBox configurations found in $rc_file"
     return
   fi
   
   local rc_backup="${rc_file_expanded}.devbox_uninstall_$(date +%Y%m%d%H%M%S).bak"
-  echo "  Modifying $rc_file to remove Rootless-DevBox configuration source"
+  echo "  Modifying $rc_file to remove Rootless-DevBox configuration"
   echo "  Creating backup: $rc_backup"
   
   if cp "$rc_file_expanded" "$rc_backup"; then
-    # Remove Rootless-DevBox comment and source lines
-    grep -vE "(# Rootless-DevBox configuration|source ${shared_config_bash}|\\. ${shared_config_bash}|source ${shared_config_fish})" "$rc_backup" > "$rc_file_expanded"
+    # Create a temporary file for processing
+    local temp_file="${rc_file_expanded}.tmp"
     
-    # Also remove any old-style configurations if they exist
-    sed -i '/# Added by Rootless-DevBox installer/,/^$/d' "$rc_file_expanded"
-    sed -i '/# Rootless-DevBox Nix environment variables/,/^$/d' "$rc_file_expanded"
-    sed -i '/# Rootless-DevBox nix-chroot environment indicator/,/^fi$/d' "$rc_file_expanded"
+    # Process the file to remove Rootless-DevBox configurations
+    # Note: We keep the PATH addition to ~/.local/bin as it's generally useful
+    awk '
+      /^# Rootless-DevBox: Auto-start nix-chroot/ {
+        # Skip this line and the auto-chroot block
+        while (getline > 0 && $0 !~ /^$/ && $0 !~ /^# [^R]/) {
+          if ($0 ~ /^fi$/ || $0 ~ /^end$/) { getline; break; }
+        }
+        next
+      }
+      /^# Rootless-DevBox configuration$/ { next }
+      /^# Added by Rootless-DevBox installer/ {
+        while (getline > 0 && $0 !~ /^$/) { }
+        next
+      }
+      /^# Rootless-DevBox Nix environment variables/ {
+        while (getline > 0 && $0 !~ /^$/) { }
+        next
+      }
+      /^# Rootless-DevBox nix-chroot environment indicator/ {
+        while (getline > 0) { if ($0 ~ /^fi$/) break; }
+        next
+      }
+      { print }
+    ' "$rc_file_expanded" > "$temp_file"
+    
+    # Replace original with cleaned version
+    mv "$temp_file" "$rc_file_expanded"
     
     print_success "  Processed $rc_file"
     echo "  Backup available at: $rc_backup"
@@ -190,6 +211,7 @@ main() {
   remove_file_if_exists "${local_bin_dir}/devbox" "DevBox binary"
   remove_file_if_exists "${local_bin_dir}/nix-chroot" "nix-chroot script"
   remove_file_if_exists "${local_bin_dir}/nix-user-chroot" "nix-user-chroot binary"
+  remove_file_if_exists "${HOME}/devbox_install_user.sh" "DevBox installer script"
 
   print_step "Processing shell configuration files"
   if [ ${#shell_rc_files[@]} -eq 0 ]; then
@@ -256,6 +278,62 @@ main() {
     fi
   else
     echo "Nix directory ${nix_dir} not found. Skipping."
+  fi
+
+  print_step "Removing Nix user profile files and symlinks"
+  local items_removed=0
+  
+  # Remove .nix-profile symlink (or directory if it exists)
+  if [ -L "${HOME}/.nix-profile" ] || [ -e "${HOME}/.nix-profile" ]; then
+    if rm -rf "${HOME}/.nix-profile"; then
+      print_success "Removed: ~/.nix-profile"
+      items_removed=1
+    else
+      print_error_msg "Failed to remove: ~/.nix-profile"
+    fi
+  fi
+  
+  # Remove .nix-defexpr directory
+  if [ -d "${HOME}/.nix-defexpr" ]; then
+    if rm -rf "${HOME}/.nix-defexpr"; then
+      print_success "Removed directory: ~/.nix-defexpr"
+      items_removed=1
+    else
+      print_error_msg "Failed to remove directory: ~/.nix-defexpr"
+    fi
+  fi
+  
+  # Remove .nix-channels file
+  if [ -f "${HOME}/.nix-channels" ]; then
+    if rm "${HOME}/.nix-channels"; then
+      print_success "Removed file: ~/.nix-channels"
+      items_removed=1
+    else
+      print_error_msg "Failed to remove file: ~/.nix-channels"
+    fi
+  fi
+  
+  # Remove XDG symlinks
+  if [ -L "${HOME}/.cache/nix" ]; then
+    if rm "${HOME}/.cache/nix"; then
+      print_success "Removed symlink: ~/.cache/nix"
+      items_removed=1
+    else
+      print_error_msg "Failed to remove symlink: ~/.cache/nix"
+    fi
+  fi
+  
+  if [ -L "${HOME}/.local/share/nix" ]; then
+    if rm "${HOME}/.local/share/nix"; then
+      print_success "Removed symlink: ~/.local/share/nix"
+      items_removed=1
+    else
+      print_error_msg "Failed to remove symlink: ~/.local/share/nix"
+    fi
+  fi
+  
+  if [ $items_removed -eq 0 ]; then
+    echo "No Nix user profile files or symlinks found"
   fi
 
   echo ""

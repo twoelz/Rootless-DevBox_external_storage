@@ -127,149 +127,9 @@ set_nix_mirror_if_needed() {
   fi
 }
 
-# Configure shell rc files with Nix environment variables
+# Configure shell rc files to add ~/.local/bin to PATH
 configure_shell_rc() {
-  local nix_dir="$1"
-  local local_bin_dir="$2"
-  
-  # Create shared configuration directory
-  local config_dir="${HOME}/.config/rootless-devbox"
-  local shared_config_bash="${config_dir}/env.sh"
-  local shared_config_fish="${config_dir}/env.fish"
-  
-  mkdir -p "$config_dir"
-  
-  echo ""
-  echo_color "$CYAN" "Creating shared configuration files..."
-  
-  # Determine where to store Nix-specific cache/data
-  local nix_parent_dir=$(dirname "${nix_dir}")
-  local nix_cache_target
-  local nix_data_target
-  
-  # If using custom location, store Nix cache/data there; otherwise use defaults
-  if [[ "${nix_dir}" != "${HOME}/.nix" ]]; then
-    nix_cache_target="${nix_parent_dir}/cache/nix"
-    nix_data_target="${nix_parent_dir}/data/nix"
-  else
-    # Using default location, no symlinks needed
-    nix_cache_target="${HOME}/.cache/nix"
-    nix_data_target="${HOME}/.local/share/nix"
-  fi
-  
-  # Create shared config for bash/zsh
-  cat > "$shared_config_bash" <<'BASHEOF'
-# Rootless-DevBox Environment Configuration
-# This file is sourced by your shell configuration
-
-# Add ~/.local/bin to PATH if not already present
-if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
-  export PATH="$HOME/.local/bin:$PATH"
-fi
-
-# Nix environment variables
-BASHEOF
-  echo "export NIX_BASE_DIR=\"${nix_dir}\"" >> "$shared_config_bash"
-  cat >> "$shared_config_bash" <<'BASHEOF'
-
-# Add Nix profile to PATH (allows running Nix-installed programs globally)
-if [ -d "\$HOME/.nix-profile/bin" ]; then
-  export PATH="\$HOME/.nix-profile/bin:\$PATH"
-fi
-
-# Source Nix environment if available
-if [ -f "\$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then
-  source "\$HOME/.nix-profile/etc/profile.d/nix.sh"
-fi
-
-# Nix-chroot environment indicator for bash
-if [ "\$NIX_CHROOT" = "1" ] && [ -n "\$BASH_VERSION" ]; then
-  PS1="(nix-chroot) \\[\\033[01;32m\\]\\u@\\h\\[\\033[00m\\]:\\[\\033[01;34m\\]\\w\\[\\033[00m\\]\\$ "
-fi
-
-# Nix-chroot environment indicator for zsh
-if [ "\$NIX_CHROOT" = "1" ] && [ -n "\$ZSH_VERSION" ]; then
-  PS1="(nix-chroot) %F{green}%n@%m%f:%F{blue}%~%f%# "
-fi
-BASHEOF
-  
-  print_success "Created shared configuration: $shared_config_bash"
-  
-  # Create symlinks for Nix subdirectories if using custom location
-  # This ensures both global Nix and nix-chroot use the same cache/data location
-  if [[ "${nix_dir}" != "${HOME}/.nix" ]]; then
-    echo ""
-    echo_color "$CYAN" "Setting up Nix cache/data directories on external storage..."
-    
-    # Create target directories on external storage
-    mkdir -p "${nix_cache_target}"
-    mkdir -p "${nix_data_target}"
-    
-    # Ensure XDG parent directories exist
-    mkdir -p "${HOME}/.cache"
-    mkdir -p "${HOME}/.local/share"
-    
-    # Create symlinks (backup existing directories if needed)
-    if [ -e "${HOME}/.cache/nix" ] && [ ! -L "${HOME}/.cache/nix" ]; then
-      echo_color "$YELLOW" "Backing up existing ${HOME}/.cache/nix to ${HOME}/.cache/nix.backup"
-      mv "${HOME}/.cache/nix" "${HOME}/.cache/nix.backup"
-    fi
-    ln -sfn "${nix_cache_target}" "${HOME}/.cache/nix"
-    print_success "Symlinked ~/.cache/nix → ${nix_cache_target}"
-    
-    if [ -e "${HOME}/.local/share/nix" ] && [ ! -L "${HOME}/.local/share/nix" ]; then
-      echo_color "$YELLOW" "Backing up existing ${HOME}/.local/share/nix to ${HOME}/.local/share/nix.backup"
-      mv "${HOME}/.local/share/nix" "${HOME}/.local/share/nix.backup"
-    fi
-    ln -sfn "${nix_data_target}" "${HOME}/.local/share/nix"
-    print_success "Symlinked ~/.local/share/nix → ${nix_data_target}"
-    
-    echo_color "$GREEN" "✓ Nix will use external storage for cache/data (both global and nix-chroot)"
-    echo_color "$GREY" "  Other applications remain unaffected and use standard XDG locations"
-  fi
-  
-  # Create shared config for fish
-  cat > "$shared_config_fish" <<'FISHEOF'
-# Rootless-DevBox Environment Configuration for Fish
-# This file is sourced by Fish shell configuration
-
-# Add ~/.local/bin to PATH if not already present
-if not contains $HOME/.local/bin $PATH
-    set -gx PATH $HOME/.local/bin $PATH
-end
-
-# Nix environment variables
-FISHEOF
-  echo "set -gx NIX_BASE_DIR \"${nix_dir}\"" >> "$shared_config_fish"
-  cat >> "$shared_config_fish" <<'FISHEOF'
-
-# Add Nix profile to PATH (allows running Nix-installed programs globally)
-if test -d \$HOME/.nix-profile/bin
-    set -gx PATH \$HOME/.nix-profile/bin \$PATH
-end
-
-# Source Nix environment if available
-if test -f \$HOME/.nix-profile/etc/profile.d/nix.fish
-    source \$HOME/.nix-profile/etc/profile.d/nix.fish
-end
-
-# Nix-chroot environment indicator for fish
-if test "\$NIX_CHROOT" = "1"
-    function fish_prompt
-        echo -n "(nix-chroot) "
-        set_color green
-        echo -n (whoami)@(hostname)
-        set_color normal
-        echo -n ":"
-        set_color blue
-        echo -n (prompt_pwd)
-        set_color normal
-        echo -n "> "
-    end
-end
-FISHEOF
-  
-  print_success "Created shared configuration: $shared_config_fish"
+  local local_bin_dir="$1"
   
   # Detect available shells
   local shells=()
@@ -341,30 +201,168 @@ FISHEOF
     echo_color "$BLUE" "Configuring $shell_file..."
     
     if [ "$shell_name" = "fish" ]; then
-      # Fish uses 'source' command
-      if ! grep -qF "source ${shared_config_fish}" "$shell_file_expanded"; then
+      # Fish shell - add PATH check
+      if ! grep -q "# Rootless-DevBox: Add ~/.local/bin to PATH" "$shell_file_expanded"; then
         echo '' >> "$shell_file_expanded"
-        echo '# Rootless-DevBox configuration' >> "$shell_file_expanded"
-        echo "source ${shared_config_fish}" >> "$shell_file_expanded"
-        print_success "Added Rootless-DevBox configuration source to $shell_file"
+        echo '# Rootless-DevBox: Add ~/.local/bin to PATH' >> "$shell_file_expanded"
+        echo 'if not contains $HOME/.local/bin $PATH' >> "$shell_file_expanded"
+        echo '    set -gx PATH $HOME/.local/bin $PATH' >> "$shell_file_expanded"
+        echo 'end' >> "$shell_file_expanded"
+        print_success "Added ~/.local/bin to PATH in $shell_file"
       else
-        echo "  - Rootless-DevBox configuration already sourced"
+        echo "  - ~/.local/bin PATH configuration already present"
       fi
     else
-      # Bash/Zsh use '.' or 'source'
-      if ! grep -qF "source ${shared_config_bash}" "$shell_file_expanded" && ! grep -qF ". ${shared_config_bash}" "$shell_file_expanded"; then
+      # Bash/Zsh - add PATH check
+      if ! grep -q "# Rootless-DevBox: Add ~/.local/bin to PATH" "$shell_file_expanded"; then
         echo '' >> "$shell_file_expanded"
-        echo '# Rootless-DevBox configuration' >> "$shell_file_expanded"
-        echo "source ${shared_config_bash}" >> "$shell_file_expanded"
-        print_success "Added Rootless-DevBox configuration source to $shell_file"
+        echo '# Rootless-DevBox: Add ~/.local/bin to PATH' >> "$shell_file_expanded"
+        echo 'if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then' >> "$shell_file_expanded"
+        echo '  export PATH="$HOME/.local/bin:$PATH"' >> "$shell_file_expanded"
+        echo 'fi' >> "$shell_file_expanded"
+        print_success "Added ~/.local/bin to PATH in $shell_file"
       else
-        echo "  - Rootless-DevBox configuration already sourced"
+        echo "  - ~/.local/bin PATH configuration already present"
       fi
     fi
   done
   
   echo ""
   echo_color "$YELLOW" "Please restart your shell or run 'source <config-file>' for changes to take effect."
+}
+
+# =============================================================================
+# OPTIONAL FEATURE: Auto-start nix-chroot on shell initialization
+# =============================================================================
+# This function adds auto-chroot configuration to shell RC files.
+# When enabled, every new interactive shell will automatically enter nix-chroot,
+# making global Nix packages available without manually running 'nix-chroot'.
+#
+# Useful for: Anyone who wants global packages (from 'devbox global add' or
+#             'nix-env -i') to work automatically in every new shell
+# Trade-off: Adds startup delay per shell (~100ms local, 2-10s network storage)
+# Bypass: Set SKIP_NIX_CHROOT=1 before opening shell (e.g., SKIP_NIX_CHROOT=1 bash)
+#
+# To remove this feature:
+# 1. Delete this entire function
+# 2. Remove the call to setup_auto_chroot_if_requested in main()
+# 3. Shell RC files remain unmodified (clean install)
+# =============================================================================
+setup_auto_chroot_if_requested() {
+  local nix_dir="$1"
+  local files_to_update=("$@")
+  # Remove first argument (nix_dir) to get list of shell files
+  shift
+  files_to_update=("$@")
+  
+  if [ ${#files_to_update[@]} -eq 0 ]; then
+    return
+  fi
+  
+  echo ""
+  echo_color "$CYAN" "═══════════════════════════════════════════════════════════"
+  echo_color "$CYAN" "Optional: Auto-start nix-chroot for global packages"
+  echo_color "$CYAN" "═══════════════════════════════════════════════════════════"
+  echo ""
+  echo "This feature automatically enters nix-chroot when you open a new shell,"
+  echo "making global Nix packages (from 'devbox global add' or 'nix-env -i')"
+  echo "available immediately without typing 'nix-chroot' manually."
+  echo ""
+  echo_color "$YELLOW" "Trade-offs:"
+  echo "  ${GREEN}+${RESET} Convenience: Global packages work in every new shell"
+  echo "  ${RED}-${RESET} Performance: Adds 2-10s startup delay (especially with network storage)"
+  echo ""
+  echo_color "$GREY" "Bypass anytime: SKIP_NIX_CHROOT=1 bash (or fish/zsh)"
+  echo ""
+  echo_color "$YELLOW" "Enable auto-chroot? [y/N]"
+  read -r enable_auto
+  enable_auto=${enable_auto:-n}
+  
+  if [[ ! "$enable_auto" =~ ^[Yy]$ ]]; then
+    echo_color "$GREEN" "Auto-chroot disabled. Use 'nix-chroot' manually when needed."
+    return
+  fi
+  
+  # Add auto-chroot to each selected shell file
+  for shell_info in "${files_to_update[@]}"; do
+    local shell_name="${shell_info%%:*}"
+    local shell_file="${shell_info#*:}"
+    local shell_file_expanded="${shell_file/#\~/$HOME}"
+    
+    if [ "$shell_name" = "fish" ]; then
+      if ! grep -q "# Rootless-DevBox: Auto-start nix-chroot" "$shell_file_expanded"; then
+        echo '' >> "$shell_file_expanded"
+        echo '# Rootless-DevBox: Auto-start nix-chroot for global packages' >> "$shell_file_expanded"
+        echo '# Set SKIP_NIX_CHROOT=1 to bypass (e.g., SKIP_NIX_CHROOT=1 fish)' >> "$shell_file_expanded"
+        echo 'if status is-interactive; and not set -q NIX_CHROOT; and not set -q SKIP_NIX_CHROOT' >> "$shell_file_expanded"
+        echo "    if test -x \$HOME/.local/bin/nix-user-chroot" >> "$shell_file_expanded"
+        echo "        exec \$HOME/.local/bin/nix-user-chroot ${nix_dir} env NIX_CHROOT=1 fish" >> "$shell_file_expanded"
+        echo '    end' >> "$shell_file_expanded"
+        echo 'end' >> "$shell_file_expanded"
+        print_success "Added auto-chroot to $shell_file"
+      fi
+    else
+      if ! grep -q "# Rootless-DevBox: Auto-start nix-chroot" "$shell_file_expanded"; then
+        echo '' >> "$shell_file_expanded"
+        echo '# Rootless-DevBox: Auto-start nix-chroot for global packages' >> "$shell_file_expanded"
+        echo '# Set SKIP_NIX_CHROOT=1 to bypass (e.g., SKIP_NIX_CHROOT=1 bash)' >> "$shell_file_expanded"
+        echo 'if [[ $- == *i* ]] && [ -z "$NIX_CHROOT" ] && [ -z "$SKIP_NIX_CHROOT" ]; then' >> "$shell_file_expanded"
+        echo '  if [ -x "$HOME/.local/bin/nix-user-chroot" ]; then' >> "$shell_file_expanded"
+        echo "    exec \$HOME/.local/bin/nix-user-chroot ${nix_dir} env NIX_CHROOT=1 bash -l" >> "$shell_file_expanded"
+        echo '  fi' >> "$shell_file_expanded"
+        echo 'fi' >> "$shell_file_expanded"
+        print_success "Added auto-chroot to $shell_file"
+      fi
+    fi
+  done
+  
+  echo ""
+  echo_color "$GREEN" "✓ Auto-chroot enabled! Global packages will be available in new shells."
+  echo_color "$GREY" "  Note: Shell startup will be 2-10s slower due to nix-chroot initialization."
+  echo_color "$GREY" "  Bypass anytime with: SKIP_NIX_CHROOT=1 bash (or fish/zsh)"
+}
+
+# Setup Nix cache/data symlinks if using custom location
+setup_nix_cache_symlinks() {
+  local nix_dir="$1"
+  
+  # Only set up symlinks if using custom location
+  if [[ "${nix_dir}" == "${HOME}/.nix" ]]; then
+    return 0
+  fi
+  
+  echo ""
+  echo_color "$CYAN" "Setting up Nix cache/data directories on external storage..."
+  
+  local nix_parent_dir=$(dirname "${nix_dir}")
+  local nix_cache_target="${nix_parent_dir}/cache/nix"
+  local nix_data_target="${nix_parent_dir}/data/nix"
+  
+  # Create target directories on external storage
+  mkdir -p "${nix_cache_target}"
+  mkdir -p "${nix_data_target}"
+  
+  # Ensure XDG parent directories exist
+  mkdir -p "${HOME}/.cache"
+  mkdir -p "${HOME}/.local/share"
+  
+  # Create symlinks (backup existing directories if needed)
+  if [ -e "${HOME}/.cache/nix" ] && [ ! -L "${HOME}/.cache/nix" ]; then
+    echo_color "$YELLOW" "Backing up existing ${HOME}/.cache/nix to ${HOME}/.cache/nix.backup"
+    mv "${HOME}/.cache/nix" "${HOME}/.cache/nix.backup"
+  fi
+  ln -sfn "${nix_cache_target}" "${HOME}/.cache/nix"
+  print_success "Symlinked ~/.cache/nix → ${nix_cache_target}"
+  
+  if [ -e "${HOME}/.local/share/nix" ] && [ ! -L "${HOME}/.local/share/nix" ]; then
+    echo_color "$YELLOW" "Backing up existing ${HOME}/.local/share/nix to ${HOME}/.local/share/nix.backup"
+    mv "${HOME}/.local/share/nix" "${HOME}/.local/share/nix.backup"
+  fi
+  ln -sfn "${nix_data_target}" "${HOME}/.local/share/nix"
+  print_success "Symlinked ~/.local/share/nix → ${nix_data_target}"
+  
+  echo_color "$GREEN" "✓ Nix will use external storage for cache/data"
+  echo_color "$GREY" "  Other applications remain unaffected and use standard XDG locations"
 }
 
 # Ask user for Nix installation directory
@@ -384,7 +382,7 @@ ask_nix_directory() {
     while true; do
       echo ""
       echo "Enter the custom directory path (without the trailing '/.nix'):"
-      echo_color "$GREY" "Example: ${HOME}/network_drive/users/$(whoami)/nix"
+      echo_color "$GREY" "Example: /mnt/external/nix or ${HOME}/custom_storage/nix"
       echo_color "$GREY" "The installer will automatically append '/.nix' to your path"
       read -r custom_path
       
@@ -542,7 +540,10 @@ main() {
     print_success "Created directory $nix_dir with permissions 0755"
   fi
 
-  # Step 4: Install Nix in rootless mode using nix-user-chroot
+  # Step 4: Set up Nix cache/data symlinks if using custom location
+  setup_nix_cache_symlinks "${nix_dir}"
+
+  # Step 5: Install Nix in rootless mode using nix-user-chroot
   print_step "Installing Nix in rootless mode"
   if [ ! -d "${HOME}/.nix-profile" ]; then
     "$nix_user_chroot_path" "$nix_dir" bash -c "curl -L ${NIX_INSTALL_URL} | bash"
@@ -551,7 +552,7 @@ main() {
     echo "Nix already installed in ~/.nix-profile, skipping Nix installation."
   fi
 
-  # Step 5: Create nix-chroot script
+  # Step 6: Create nix-chroot script
   print_step "Installing nix-chroot script"
   local nix_chroot_path_in_bin="${local_bin_dir}/nix-chroot"
   cat > "$nix_chroot_path_in_bin" <<EOF
@@ -561,7 +562,7 @@ EOF
   chmod +x "$nix_chroot_path_in_bin"
   print_success "Created nix-chroot script at ${nix_chroot_path_in_bin}"
 
-  # Step 6: Continue with DevBox installation process
+  # Step 7: Continue with DevBox installation process
   print_step "Preparing DevBox installation"
   
   local devbox_install_script="${temp_dir}/devbox_install_user.sh"
@@ -826,9 +827,37 @@ EOF
         print_error "${local_bin_dir}/nix-chroot not found or not executable. Please check previous steps."
     fi
     
-    configure_shell_rc "${nix_dir}" "${local_bin_dir}"
+    # Check if ~/.local/bin is already in PATH
+    if [[ ":$PATH:" == *":${local_bin_dir}:"* ]]; then
+      echo ""
+      echo_color "$GREEN" "✓ ${local_bin_dir} is already in your PATH"
+      echo_color "$GREY" "  Skipping PATH configuration"
+    else
+      echo ""
+      echo_color "$YELLOW" "${local_bin_dir} is not in your current PATH"
+      echo "Would you like to add it to your shell configuration? [Y/n]"
+      read -r add_to_path
+      add_to_path=${add_to_path:-y}
+      if [[ "$add_to_path" =~ ^[Yy]$ ]]; then
+        # Detect shells for auto-chroot feature
+        local shells_for_auto=()
+        [[ -f ~/.bashrc ]] && shells_for_auto+=("bash:~/.bashrc")
+        [[ -f ~/.zshrc ]] && shells_for_auto+=("zsh:~/.zshrc")
+        [[ -f ~/.config/fish/config.fish ]] && shells_for_auto+=("fish:~/.config/fish/config.fish")
+        
+        configure_shell_rc "${local_bin_dir}"
+        
+        # Offer auto-chroot setup (optional feature)
+        if [ ${#shells_for_auto[@]} -gt 0 ]; then
+          setup_auto_chroot_if_requested "${nix_dir}" "${shells_for_auto[@]}"
+        fi
+      else
+        echo_color "$YELLOW" "Skipped. You'll need to use full path: ${local_bin_dir}/nix-chroot"
+      fi
+    fi
     
-    echo_color "$YELLOW" "Environment variables configured. Now installing DevBox automatically in nix-chroot environment..."
+    echo ""
+    echo_color "$YELLOW" "Now installing DevBox automatically in nix-chroot environment..."
     "${local_bin_dir}/nix-user-chroot" "${nix_dir}" env NIX_CHROOT=1 bash "${permanent_devbox_install_script}"
     if [ -x "${local_bin_dir}/devbox" ]; then
       print_success "DevBox installed successfully! You can now use 'nix-chroot' and 'devbox'."
@@ -847,26 +876,58 @@ EOF
     echo "   run the DevBox installer script:"
     echo_color "$CYAN" "     ${permanent_devbox_install_script}"
     echo ""
-    echo "After you have successfully completed BOTH steps above, would you like this script"
-    echo "to configure your shell configuration files? (Adds ${local_bin_dir} to PATH and environment variables) [y/N]"
-    read -r configure_shell
-    if [[ "$configure_shell" =~ ^[Yy] ]]; then
-      print_step "Configuring shell environment"
-      
-      configure_shell_rc "${nix_dir}" "${local_bin_dir}"
+    # Check if ~/.local/bin is already in PATH
+    if [[ ":$PATH:" == *":${local_bin_dir}:"* ]]; then
+      echo ""
+      echo_color "$GREEN" "✓ ${local_bin_dir} is already in your PATH"
+      echo_color "$GREY" "  No shell configuration needed"
       echo ""
       echo_color "$GREEN" "DevBox setup process is complete!"
       echo "To use DevBox: "
-      echo "1. Start the environment: '${local_bin_dir}/nix-chroot' (or 'nix-chroot' if PATH is set from new shell)"
+      echo "1. Start the environment: 'nix-chroot'"
       echo "2. Then use 'devbox' commands."
     else
-      echo_color "$YELLOW" "Configuration of shell rc files skipped as per your choice."
-      echo "Please ensure '${local_bin_dir}' is in your PATH for 'nix-chroot' and 'devbox' to work easily."
-      echo "You might want to manually add to your shell configuration file:"
-      echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
-      echo "  export NIX_BASE_DIR=\"${nix_dir}\""
-      echo "  export XDG_CACHE_HOME=\"\$NIX_BASE_DIR/cache\""
-      echo "  export XDG_DATA_HOME=\"\$NIX_BASE_DIR/state\""
+      echo "After you have successfully completed BOTH steps above, would you like to add"
+      echo "${local_bin_dir} to your PATH via shell configuration? [y/N]"
+      read -r configure_shell
+      if [[ "$configure_shell" =~ ^[Yy]$ ]]; then
+        print_step "Configuring shell environment"
+        
+        # Detect shells for auto-chroot feature
+        local shells_for_auto=()
+        [[ -f ~/.bashrc ]] && shells_for_auto+=("bash:~/.bashrc")
+        [[ -f ~/.zshrc ]] && shells_for_auto+=("zsh:~/.zshrc")
+        [[ -f ~/.config/fish/config.fish ]] && shells_for_auto+=("fish:~/.config/fish/config.fish")
+        
+        configure_shell_rc "${local_bin_dir}"
+        
+        # Offer auto-chroot setup (optional feature)
+        local enable_auto_result="no"
+        if [ ${#shells_for_auto[@]} -gt 0 ]; then
+          setup_auto_chroot_if_requested "${nix_dir}" "${shells_for_auto[@]}"
+          # Check if user enabled it by looking for the marker in any shell config
+          if grep -q "# Rootless-DevBox: Auto-start nix-chroot" ~/.bashrc 2>/dev/null || \
+             grep -q "# Rootless-DevBox: Auto-start nix-chroot" ~/.zshrc 2>/dev/null || \
+             grep -q "# Rootless-DevBox: Auto-start nix-chroot" ~/.config/fish/config.fish 2>/dev/null; then
+            enable_auto_result="yes"
+          fi
+        fi
+        
+        echo ""
+        echo_color "$GREEN" "DevBox setup process is complete!"
+        echo "To use DevBox: "
+        if [ "$enable_auto_result" = "yes" ]; then
+          echo "1. Open a new shell (auto-starts nix-chroot)"
+          echo "2. Use 'devbox' commands directly"
+        else
+          echo "1. Start the environment: '${local_bin_dir}/nix-chroot' (or 'nix-chroot' in a new shell)"
+          echo "2. Then use 'devbox' commands."
+        fi
+      else
+        echo_color "$YELLOW" "Configuration skipped. You'll need to use the full path: ${local_bin_dir}/nix-chroot"
+        echo "Or manually add to your shell configuration file:"
+        echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+      fi
     fi
   fi
   
