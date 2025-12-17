@@ -127,13 +127,357 @@ set_nix_mirror_if_needed() {
   fi
 }
 
+# Configure shell rc files with Nix environment variables
+configure_shell_rc() {
+  local nix_dir="$1"
+  local local_bin_dir="$2"
+  
+  # Create shared configuration directory
+  local config_dir="${HOME}/.config/rootless-devbox"
+  local shared_config_bash="${config_dir}/env.sh"
+  local shared_config_fish="${config_dir}/env.fish"
+  
+  mkdir -p "$config_dir"
+  
+  echo ""
+  echo_color "$CYAN" "Creating shared configuration files..."
+  
+  # Determine where to store Nix-specific cache/data
+  local nix_parent_dir=$(dirname "${nix_dir}")
+  local nix_cache_target
+  local nix_data_target
+  
+  # If using custom location, store Nix cache/data there; otherwise use defaults
+  if [[ "${nix_dir}" != "${HOME}/.nix" ]]; then
+    nix_cache_target="${nix_parent_dir}/cache/nix"
+    nix_data_target="${nix_parent_dir}/data/nix"
+  else
+    # Using default location, no symlinks needed
+    nix_cache_target="${HOME}/.cache/nix"
+    nix_data_target="${HOME}/.local/share/nix"
+  fi
+  
+  # Create shared config for bash/zsh
+  cat > "$shared_config_bash" <<'BASHEOF'
+# Rootless-DevBox Environment Configuration
+# This file is sourced by your shell configuration
+
+# Add ~/.local/bin to PATH if not already present
+if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+  export PATH="$HOME/.local/bin:$PATH"
+fi
+
+# Nix environment variables
+BASHEOF
+  echo "export NIX_BASE_DIR=\"${nix_dir}\"" >> "$shared_config_bash"
+  cat >> "$shared_config_bash" <<'BASHEOF'
+
+# Add Nix profile to PATH (allows running Nix-installed programs globally)
+if [ -d "\$HOME/.nix-profile/bin" ]; then
+  export PATH="\$HOME/.nix-profile/bin:\$PATH"
+fi
+
+# Source Nix environment if available
+if [ -f "\$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then
+  source "\$HOME/.nix-profile/etc/profile.d/nix.sh"
+fi
+
+# Nix-chroot environment indicator for bash
+if [ "\$NIX_CHROOT" = "1" ] && [ -n "\$BASH_VERSION" ]; then
+  PS1="(nix-chroot) \\[\\033[01;32m\\]\\u@\\h\\[\\033[00m\\]:\\[\\033[01;34m\\]\\w\\[\\033[00m\\]\\$ "
+fi
+
+# Nix-chroot environment indicator for zsh
+if [ "\$NIX_CHROOT" = "1" ] && [ -n "\$ZSH_VERSION" ]; then
+  PS1="(nix-chroot) %F{green}%n@%m%f:%F{blue}%~%f%# "
+fi
+BASHEOF
+  
+  print_success "Created shared configuration: $shared_config_bash"
+  
+  # Create symlinks for Nix subdirectories if using custom location
+  # This ensures both global Nix and nix-chroot use the same cache/data location
+  if [[ "${nix_dir}" != "${HOME}/.nix" ]]; then
+    echo ""
+    echo_color "$CYAN" "Setting up Nix cache/data directories on external storage..."
+    
+    # Create target directories on external storage
+    mkdir -p "${nix_cache_target}"
+    mkdir -p "${nix_data_target}"
+    
+    # Ensure XDG parent directories exist
+    mkdir -p "${HOME}/.cache"
+    mkdir -p "${HOME}/.local/share"
+    
+    # Create symlinks (backup existing directories if needed)
+    if [ -e "${HOME}/.cache/nix" ] && [ ! -L "${HOME}/.cache/nix" ]; then
+      echo_color "$YELLOW" "Backing up existing ${HOME}/.cache/nix to ${HOME}/.cache/nix.backup"
+      mv "${HOME}/.cache/nix" "${HOME}/.cache/nix.backup"
+    fi
+    ln -sfn "${nix_cache_target}" "${HOME}/.cache/nix"
+    print_success "Symlinked ~/.cache/nix → ${nix_cache_target}"
+    
+    if [ -e "${HOME}/.local/share/nix" ] && [ ! -L "${HOME}/.local/share/nix" ]; then
+      echo_color "$YELLOW" "Backing up existing ${HOME}/.local/share/nix to ${HOME}/.local/share/nix.backup"
+      mv "${HOME}/.local/share/nix" "${HOME}/.local/share/nix.backup"
+    fi
+    ln -sfn "${nix_data_target}" "${HOME}/.local/share/nix"
+    print_success "Symlinked ~/.local/share/nix → ${nix_data_target}"
+    
+    echo_color "$GREEN" "✓ Nix will use external storage for cache/data (both global and nix-chroot)"
+    echo_color "$GREY" "  Other applications remain unaffected and use standard XDG locations"
+  fi
+  
+  # Create shared config for fish
+  cat > "$shared_config_fish" <<'FISHEOF'
+# Rootless-DevBox Environment Configuration for Fish
+# This file is sourced by Fish shell configuration
+
+# Add ~/.local/bin to PATH if not already present
+if not contains $HOME/.local/bin $PATH
+    set -gx PATH $HOME/.local/bin $PATH
+end
+
+# Nix environment variables
+FISHEOF
+  echo "set -gx NIX_BASE_DIR \"${nix_dir}\"" >> "$shared_config_fish"
+  cat >> "$shared_config_fish" <<'FISHEOF'
+
+# Add Nix profile to PATH (allows running Nix-installed programs globally)
+if test -d \$HOME/.nix-profile/bin
+    set -gx PATH \$HOME/.nix-profile/bin \$PATH
+end
+
+# Source Nix environment if available
+if test -f \$HOME/.nix-profile/etc/profile.d/nix.fish
+    source \$HOME/.nix-profile/etc/profile.d/nix.fish
+end
+
+# Nix-chroot environment indicator for fish
+if test "\$NIX_CHROOT" = "1"
+    function fish_prompt
+        echo -n "(nix-chroot) "
+        set_color green
+        echo -n (whoami)@(hostname)
+        set_color normal
+        echo -n ":"
+        set_color blue
+        echo -n (prompt_pwd)
+        set_color normal
+        echo -n "> "
+    end
+end
+FISHEOF
+  
+  print_success "Created shared configuration: $shared_config_fish"
+  
+  # Detect available shells
+  local shells=()
+  local current_shell=$(basename "$SHELL")
+  
+  echo ""
+  echo_color "$CYAN" "Detecting shell configuration files..."
+  
+  # Check for common shell rc files
+  [[ -f ~/.bashrc ]] && shells+=("bash:~/.bashrc")
+  [[ -f ~/.zshrc ]] && shells+=("zsh:~/.zshrc")
+  [[ -f ~/.config/fish/config.fish ]] && shells+=("fish:~/.config/fish/config.fish")
+  
+  if [ ${#shells[@]} -eq 0 ]; then
+    echo_color "$YELLOW" "No shell configuration files found. Creating ~/.bashrc"
+    touch ~/.bashrc
+    shells+=("bash:~/.bashrc")
+  fi
+  
+  echo "Found the following shell configuration files:"
+  for i in "${!shells[@]}"; do
+    local shell_info="${shells[$i]}"
+    local shell_name="${shell_info%%:*}"
+    local shell_file="${shell_info#*:}"
+    if [ "$shell_name" = "$current_shell" ]; then
+      echo "  $((i+1)). $shell_file ($shell_name) [current shell]"
+    else
+      echo "  $((i+1)). $shell_file ($shell_name)"
+    fi
+  done
+  
+  echo ""
+  echo "Which shell configuration files would you like to update?"
+  echo "Enter numbers separated by spaces (e.g., '1 2'), or 'all' for all shells, or 'current' for current shell only:"
+  read -r shell_choice
+  
+  local files_to_update=()
+  
+  if [[ "$shell_choice" == "all" ]]; then
+    files_to_update=("${shells[@]}")
+  elif [[ "$shell_choice" == "current" ]]; then
+    for shell_info in "${shells[@]}"; do
+      local shell_name="${shell_info%%:*}"
+      if [ "$shell_name" = "$current_shell" ]; then
+        files_to_update+=("$shell_info")
+        break
+      fi
+    done
+  else
+    for num in $shell_choice; do
+      if [[ "$num" =~ ^[0-9]+$ ]] && [ "$num" -ge 1 ] && [ "$num" -le "${#shells[@]}" ]; then
+        files_to_update+=("${shells[$((num-1))]}")
+      fi
+    done
+  fi
+  
+  if [ ${#files_to_update[@]} -eq 0 ]; then
+    echo_color "$YELLOW" "No shells selected. Skipping shell configuration."
+    return
+  fi
+  
+  # Update selected shell files with a single source line
+  for shell_info in "${files_to_update[@]}"; do
+    local shell_name="${shell_info%%:*}"
+    local shell_file="${shell_info#*:}"
+    local shell_file_expanded="${shell_file/#\~/$HOME}"
+    
+    echo ""
+    echo_color "$BLUE" "Configuring $shell_file..."
+    
+    if [ "$shell_name" = "fish" ]; then
+      # Fish uses 'source' command
+      if ! grep -qF "source ${shared_config_fish}" "$shell_file_expanded"; then
+        echo '' >> "$shell_file_expanded"
+        echo '# Rootless-DevBox configuration' >> "$shell_file_expanded"
+        echo "source ${shared_config_fish}" >> "$shell_file_expanded"
+        print_success "Added Rootless-DevBox configuration source to $shell_file"
+      else
+        echo "  - Rootless-DevBox configuration already sourced"
+      fi
+    else
+      # Bash/Zsh use '.' or 'source'
+      if ! grep -qF "source ${shared_config_bash}" "$shell_file_expanded" && ! grep -qF ". ${shared_config_bash}" "$shell_file_expanded"; then
+        echo '' >> "$shell_file_expanded"
+        echo '# Rootless-DevBox configuration' >> "$shell_file_expanded"
+        echo "source ${shared_config_bash}" >> "$shell_file_expanded"
+        print_success "Added Rootless-DevBox configuration source to $shell_file"
+      else
+        echo "  - Rootless-DevBox configuration already sourced"
+      fi
+    fi
+  done
+  
+  echo ""
+  echo_color "$YELLOW" "Please restart your shell or run 'source <config-file>' for changes to take effect."
+}
+
+# Ask user for Nix installation directory
+ask_nix_directory() {
+  echo ""
+  echo_color "$CYAN" "Where would you like to install Nix?"
+  echo "The Nix store requires significant disk space and will be located at this path."
+  echo ""
+  echo "Options:"
+  echo "  1. Default location (${HOME}/.nix)"
+  echo "  2. Custom location (e.g., external storage like 'network_drive')"
+  echo ""
+  echo_color "$YELLOW" "Enter '1' for default, or '2' to specify a custom path:"
+  read -r nix_dir_choice
+  
+  if [[ "$nix_dir_choice" == "2" ]]; then
+    while true; do
+      echo ""
+      echo "Enter the custom directory path (without the trailing '/.nix'):"
+      echo_color "$GREY" "Example: ${HOME}/network_drive/users/$(whoami)/nix"
+      echo_color "$GREY" "The installer will automatically append '/.nix' to your path"
+      read -r custom_path
+      
+      # Expand tilde if present
+      custom_path="${custom_path/#\~/$HOME}"
+      
+      if [ -z "$custom_path" ]; then
+        echo_color "$YELLOW" "No path provided. Using default location."
+        export NIX_BASE_DIR="${HOME}/.nix"
+        break
+      fi
+      
+      # Validate the path
+      local parent_dir=$(dirname "$custom_path")
+      
+      # Check if parent directory exists or can be accessed
+      if [ ! -d "$parent_dir" ]; then
+        echo_color "$RED" "Error: Parent directory '$parent_dir' does not exist."
+        echo ""
+        echo "Options:"
+        echo "  1. Create the parent directory now"
+        echo "  2. Try a different path"
+        echo "  3. Use default location (${HOME}/.nix)"
+        echo ""
+        echo_color "$YELLOW" "Enter your choice (1/2/3):"
+        read -r validation_choice
+        
+        if [[ "$validation_choice" == "1" ]]; then
+          if mkdir -p "$parent_dir" 2>/dev/null; then
+            print_success "Created directory: $parent_dir"
+            export NIX_BASE_DIR="${custom_path}/.nix"
+            echo_color "$GREEN" "Nix will be installed at: ${NIX_BASE_DIR}"
+            break
+          else
+            echo_color "$RED" "Failed to create directory. You may need appropriate permissions."
+            echo_color "$YELLOW" "Please try a different location or use sudo to create the directory manually."
+            continue
+          fi
+        elif [[ "$validation_choice" == "3" ]]; then
+          echo_color "$GREEN" "Using default location: ${HOME}/.nix"
+          export NIX_BASE_DIR="${HOME}/.nix"
+          break
+        else
+          # Continue loop to try again (choice 2 or invalid input)
+          continue
+        fi
+      elif [ ! -w "$parent_dir" ]; then
+        echo_color "$RED" "Error: No write permission for '$parent_dir'."
+        echo ""
+        echo "Options:"
+        echo "  1. Try a different path"
+        echo "  2. Use default location (${HOME}/.nix)"
+        echo ""
+        echo_color "$YELLOW" "Enter your choice (1/2):"
+        read -r permission_choice
+        
+        if [[ "$permission_choice" == "2" ]]; then
+          echo_color "$GREEN" "Using default location: ${HOME}/.nix"
+          export NIX_BASE_DIR="${HOME}/.nix"
+          break
+        else
+          # Continue loop to try again
+          continue
+        fi
+      else
+        # Valid path
+        export NIX_BASE_DIR="${custom_path}/.nix"
+        echo_color "$GREEN" "Nix will be installed at: ${NIX_BASE_DIR}"
+        break
+      fi
+    done
+  else
+    echo_color "$GREEN" "Using default location: ${HOME}/.nix"
+    export NIX_BASE_DIR="${HOME}/.nix"
+  fi
+}
+
 # Main installation process
 main() {
   local local_bin_dir="${HOME}/.local/bin"
   local devbox_path="${local_bin_dir}/devbox"
   local nix_chroot_path="${local_bin_dir}/nix-chroot"
   local nix_user_chroot_path="${local_bin_dir}/nix-user-chroot"
-  local nix_dir="${HOME}/.nix"
+  # NIX_BASE_DIR is set by ask_nix_directory() or can be pre-set by user
+  local nix_symlinked_path="${NIX_BASE_DIR:-${HOME}/.nix}"
+  local nix_dir=$(readlink -f "${nix_symlinked_path}")
+
+  # Check if readlink succeeded (optional, but good)
+  if [ -z "$nix_dir" ]; then
+    echo "ERROR: Could not resolve symlink for ${nix_symlinked_path}. Aborting."
+    exit 1
+  fi
+
   local nix_user_chroot_version="1.2.2"
   local arch=$(get_architecture)
   local temp_dir=$(create_temp_dir)
@@ -151,6 +495,9 @@ main() {
 
   # Check if the system supports user namespaces (required for nix-user-chroot)
   check_user_namespace_support
+  
+  # Ask user where to install Nix
+  ask_nix_directory
 
   # Step 1: Create ~/.local/bin directory
   print_step "Creating local bin directory"
@@ -185,8 +532,8 @@ main() {
   chmod +x "$nix_user_chroot_path"
   print_success "nix-user-chroot downloaded and made executable"
 
-  # Step 3: Create ~/.nix directory (with permissions)
-  print_step "Creating Nix data directory (~/.nix)"
+  # Step 3: Create ~/.nix directory (or other if using other folder) (with permissions)
+  print_step "Creating Nix data directory (~/.nix or other folder for store)"
   if [ -d "$nix_dir" ]; then
     chmod 0755 "$nix_dir"
     echo "Directory $nix_dir already exists. Set permissions to 0755."
@@ -209,7 +556,7 @@ main() {
   local nix_chroot_path_in_bin="${local_bin_dir}/nix-chroot"
   cat > "$nix_chroot_path_in_bin" <<EOF
 #!/bin/bash
-exec \${HOME}/.local/bin/nix-user-chroot \${HOME}/.nix env NIX_CHROOT=1 bash -l
+exec \${HOME}/.local/bin/nix-user-chroot ${nix_dir} env NIX_CHROOT=1 bash -l
 EOF
   chmod +x "$nix_chroot_path_in_bin"
   print_success "Created nix-chroot script at ${nix_chroot_path_in_bin}"
@@ -479,23 +826,7 @@ EOF
         print_error "${local_bin_dir}/nix-chroot not found or not executable. Please check previous steps."
     fi
     
-    if ! grep -qF 'export PATH="$HOME/.local/bin:$PATH" # Added by Rootless-DevBox' ~/.bashrc; then
-      echo '' >> ~/.bashrc
-      echo '# Added by Rootless-DevBox installer' >> ~/.bashrc
-      echo 'export PATH="$HOME/.local/bin:$PATH" # Added by Rootless-DevBox' >> ~/.bashrc
-      echo "Added ~/.local/bin to PATH in ~/.bashrc"
-    fi
-    
-    if ! grep -qF '# Rootless-DevBox nix-chroot environment indicator' ~/.bashrc; then
-      echo '' >> ~/.bashrc 
-      cat >> ~/.bashrc <<EOF
-# Rootless-DevBox nix-chroot environment indicator
-if [ "\$NIX_CHROOT" = "1" ]; then
-  PS1="(nix-chroot) \[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\\\$ "
-fi
-EOF
-      echo "Added nix-chroot environment indicator to ~/.bashrc"
-    fi
+    configure_shell_rc "${nix_dir}" "${local_bin_dir}"
     
     echo_color "$YELLOW" "Environment variables configured. Now installing DevBox automatically in nix-chroot environment..."
     "${local_bin_dir}/nix-user-chroot" "${nix_dir}" env NIX_CHROOT=1 bash "${permanent_devbox_install_script}"
@@ -517,53 +848,25 @@ EOF
     echo_color "$CYAN" "     ${permanent_devbox_install_script}"
     echo ""
     echo "After you have successfully completed BOTH steps above, would you like this script"
-    echo "to attempt to configure your ~/.bashrc for future use? (Adds ${local_bin_dir} to PATH and a prompt indicator) [y/N]"
-    read -r configure_bashrc
-    if [[ "$configure_bashrc" =~ ^[Yy] ]]; then
-      print_step "Configuring environment variables in ~/.bashrc"
+    echo "to configure your shell configuration files? (Adds ${local_bin_dir} to PATH and environment variables) [y/N]"
+    read -r configure_shell
+    if [[ "$configure_shell" =~ ^[Yy] ]]; then
+      print_step "Configuring shell environment"
       
-      local bashrc_modified_count=0
-      if ! grep -qF 'export PATH="$HOME/.local/bin:$PATH" # Added by Rootless-DevBox' ~/.bashrc; then
-        echo '' >> ~/.bashrc
-        echo '# Added by Rootless-DevBox installer' >> ~/.bashrc
-        echo 'export PATH="$HOME/.local/bin:$PATH" # Added by Rootless-DevBox' >> ~/.bashrc
-        echo "Added ~/.local/bin to PATH in ~/.bashrc"
-        ((bashrc_modified_count++))
-      else
-        echo "~/.local/bin PATH entry by Rootless-DevBox already in ~/.bashrc."
-      fi
-      
-      if ! grep -qF '# Rootless-DevBox nix-chroot environment indicator' ~/.bashrc; then
-        echo '' >> ~/.bashrc 
-        cat >> ~/.bashrc <<EOF
-# Rootless-DevBox nix-chroot environment indicator
-if [ "\$NIX_CHROOT" = "1" ]; then
-  PS1="(nix-chroot) \[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\\\$ "
-fi
-EOF
-        echo "Added nix-chroot environment indicator to ~/.bashrc"
-        ((bashrc_modified_count++))
-      else
-        echo "nix-chroot environment indicator already in ~/.bashrc."
-      fi
-      
-      if [ "$bashrc_modified_count" -gt 0 ]; then
-        print_success "Configuration changes applied to ~/.bashrc."
-        echo "Please run 'source ~/.bashrc' or open a new terminal for these changes to take full effect."
-      else
-        print_success "~/.bashrc already contains the necessary configurations or no changes were made."
-      fi
+      configure_shell_rc "${nix_dir}" "${local_bin_dir}"
       echo ""
       echo_color "$GREEN" "DevBox setup process is complete!"
       echo "To use DevBox: "
       echo "1. Start the environment: '${local_bin_dir}/nix-chroot' (or 'nix-chroot' if PATH is set from new shell)"
       echo "2. Then use 'devbox' commands."
     else
-      echo_color "$YELLOW" "Configuration of ~/.bashrc skipped as per your choice."
+      echo_color "$YELLOW" "Configuration of shell rc files skipped as per your choice."
       echo "Please ensure '${local_bin_dir}' is in your PATH for 'nix-chroot' and 'devbox' to work easily."
-      echo "You might want to manually add:"
+      echo "You might want to manually add to your shell configuration file:"
       echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
-      echo "to your ~/.bashrc (or equivalent shell configuration file)."
+      echo "  export NIX_BASE_DIR=\"${nix_dir}\""
+      echo "  export XDG_CACHE_HOME=\"\$NIX_BASE_DIR/cache\""
+      echo "  export XDG_DATA_HOME=\"\$NIX_BASE_DIR/state\""
     fi
   fi
   

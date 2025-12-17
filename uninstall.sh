@@ -71,20 +71,105 @@ remove_file_if_exists() {
   fi
 }
 
+# Remove Rootless-DevBox configuration from shell rc files
+clean_shell_rc() {
+  local rc_file="$1"
+  local rc_file_expanded="${rc_file/#\~/$HOME}"
+  
+  if [ ! -f "$rc_file_expanded" ]; then
+    echo "  $rc_file not found. Skipping."
+    return
+  fi
+  
+  # Check if file contains Rootless-DevBox source line
+  local shared_config_bash="${HOME}/.config/rootless-devbox/env.sh"
+  local shared_config_fish="${HOME}/.config/rootless-devbox/env.fish"
+  
+  if ! grep -qE "(source ${shared_config_bash}|\\. ${shared_config_bash}|source ${shared_config_fish}|# Rootless-DevBox configuration)" "$rc_file_expanded"; then
+    echo "  No Rootless-DevBox configurations found in $rc_file"
+    return
+  fi
+  
+  local rc_backup="${rc_file_expanded}.devbox_uninstall_$(date +%Y%m%d%H%M%S).bak"
+  echo "  Modifying $rc_file to remove Rootless-DevBox configuration source"
+  echo "  Creating backup: $rc_backup"
+  
+  if cp "$rc_file_expanded" "$rc_backup"; then
+    # Remove Rootless-DevBox comment and source lines
+    grep -vE "(# Rootless-DevBox configuration|source ${shared_config_bash}|\\. ${shared_config_bash}|source ${shared_config_fish})" "$rc_backup" > "$rc_file_expanded"
+    
+    # Also remove any old-style configurations if they exist
+    sed -i '/# Added by Rootless-DevBox installer/,/^$/d' "$rc_file_expanded"
+    sed -i '/# Rootless-DevBox Nix environment variables/,/^$/d' "$rc_file_expanded"
+    sed -i '/# Rootless-DevBox nix-chroot environment indicator/,/^fi$/d' "$rc_file_expanded"
+    
+    print_success "  Processed $rc_file"
+    echo "  Backup available at: $rc_backup"
+  else
+    print_error_msg "  Failed to create backup of $rc_file. Skipping modifications."
+  fi
+}
+
+# Detect Nix installation directory from shell rc files
+detect_nix_directory() {
+  local shell_rc_files=()
+  [[ -f ~/.bashrc ]] && shell_rc_files+=("~/.bashrc")
+  [[ -f ~/.zshrc ]] && shell_rc_files+=("~/.zshrc")
+  [[ -f ~/.config/fish/config.fish ]] && shell_rc_files+=("~/.config/fish/config.fish")
+  
+  # Try to extract NIX_BASE_DIR from shell rc files
+  for rc_file in "${shell_rc_files[@]}"; do
+    local rc_file_expanded="${rc_file/#\~/$HOME}"
+    if [ -f "$rc_file_expanded" ]; then
+      local detected_dir=$(grep -oP '(?<=export NIX_BASE_DIR=")[^"]+' "$rc_file_expanded" 2>/dev/null | head -1)
+      if [ -n "$detected_dir" ]; then
+        echo "$detected_dir"
+        return 0
+      fi
+    fi
+  done
+  
+  # Fallback to default if not found
+  echo "${HOME}/.nix"
+  return 1
+}
+
 main() {
   local local_bin_dir="${HOME}/.local/bin"
-  local nix_dir="${HOME}/.nix"
-  local bashrc_file="${HOME}/.bashrc"
   local devbox_path="${local_bin_dir}/devbox"
   local nix_chroot_path="${local_bin_dir}/nix-chroot"
   local nix_user_chroot_path="${local_bin_dir}/nix-user-chroot"
+  
+  # Detect Nix directory from shell configuration
+  local nix_dir=$(detect_nix_directory)
+  local nix_dir_detected=$?
+  
+  if [ $nix_dir_detected -eq 0 ]; then
+    echo_color "$CYAN" "Detected Nix installation at: $nix_dir"
+  else
+    echo_color "$YELLOW" "Could not detect Nix installation location. Using default: $nix_dir"
+  fi
+  
+  # Detect shell rc files
+  local shell_rc_files=()
+  [[ -f ~/.bashrc ]] && shell_rc_files+=("~/.bashrc")
+  [[ -f ~/.zshrc ]] && shell_rc_files+=("~/.zshrc")
+  [[ -f ~/.config/fish/config.fish ]] && shell_rc_files+=("~/.config/fish/config.fish")
 
   # Check if any component is installed
-  if [ ! -f "$devbox_path" ] && \
-     [ ! -f "$nix_chroot_path" ] && \
-     [ ! -f "$nix_user_chroot_path" ] && \
-     [ ! -d "$nix_dir" ] && \
-     ! grep -qE '(# Added by Rootless-DevBox installer|export PATH="\$HOME/\.local/bin:\$PATH" # Added by Rootless-DevBox|# Rootless-DevBox nix-chroot environment indicator)' "$bashrc_file" 2>/dev/null; then
+  local has_components=0
+  [ -f "$devbox_path" ] || [ -f "$nix_chroot_path" ] || [ -f "$nix_user_chroot_path" ] || [ -d "$nix_dir" ] && has_components=1
+  
+  # Check shell rc files for configurations
+  for rc_file in "${shell_rc_files[@]}"; do
+    local rc_file_expanded="${rc_file/#\~/$HOME}"
+    if [ -f "$rc_file_expanded" ] && grep -qE '(# Added by Rootless-DevBox installer|# Rootless-DevBox)' "$rc_file_expanded" 2>/dev/null; then
+      has_components=1
+      break
+    fi
+  done
+  
+  if [ $has_components -eq 0 ]; then
     echo_color "$YELLOW" "No Rootless-DevBox components found. Uninstallation is not required."
     exit 0
   fi
@@ -92,7 +177,7 @@ main() {
   echo_color "$BOLD" "Rootless-DevBox Uninstaller"
   echo "This script will attempt to remove DevBox and related components"
   echo "installed by the Rootless-DevBox installer."
-  echo "It will target files in '${local_bin_dir}' and configurations in '${bashrc_file}'."
+  echo "It will target files in '${local_bin_dir}' and configurations in shell rc files."
   echo "The directory '${local_bin_dir}' itself will NOT be removed."
   echo ""
 
@@ -106,55 +191,32 @@ main() {
   remove_file_if_exists "${local_bin_dir}/nix-chroot" "nix-chroot script"
   remove_file_if_exists "${local_bin_dir}/nix-user-chroot" "nix-user-chroot binary"
 
-  print_step "Processing ~/.bashrc configurations"
-  if [ ! -f "$bashrc_file" ]; then
-    print_warning "${bashrc_file} not found. Skipping .bashrc modifications."
+  print_step "Processing shell configuration files"
+  if [ ${#shell_rc_files[@]} -eq 0 ]; then
+    print_warning "No shell configuration files found. Skipping shell rc modifications."
   else
-    if grep -qE '(# Added by Rootless-DevBox installer|export PATH="\$HOME/\.local/bin:\$PATH" # Added by Rootless-DevBox|# Rootless-DevBox nix-chroot environment indicator)' "$bashrc_file"; then
-      local bashrc_backup="${HOME}/.bashrc.devbox_uninstall_$(date +%Y%m%d%H%M%S).bak"
-      echo "Modifying ${bashrc_file} to remove Rootless-DevBox configurations."
-      echo "Backing up current ${bashrc_file} to ${bashrc_backup}"
-      if cp "${bashrc_file}" "${bashrc_backup}"; then
-        print_success "Backup created: ${bashrc_backup}"
-
-        # Use awk to remove the specific lines and blocks in a single pass
-        # This reads from the backup and writes to the original .bashrc file
-        awk '
-        BEGIN {
-            lines_to_skip = 0
-        }
-        # Rule for PATH comment
-        /# Added by Rootless-DevBox installer/ { next }
-        # Rule for PATH export
-        /export PATH="\$HOME\/\.local\/bin:\$PATH" # Added by Rootless-DevBox/ { next }
-
-        # Rule for PS1 block start
-        /# Rootless-DevBox nix-chroot environment indicator/ {
-            # This is the start of the 4-line block we want to remove,
-            # matching how install.sh adds it.
-            lines_to_skip = 4
-        }
-
-        # If we are skipping lines for the PS1 block
-        lines_to_skip > 0 {
-            lines_to_skip--
-            next
-        }
-
-        # Default action: print the line
-        { print }
-        ' "${bashrc_backup}" > "${bashrc_file}"
-
-        print_success "${bashrc_file} has been processed."
-        echo "Please review ${bashrc_file} to ensure changes are correct."
-        echo "If anything went wrong, the backup is available at: ${bashrc_backup}"
-        echo "You may need to run 'source ${bashrc_file}' or open a new terminal for changes to take effect."
-      else
-        print_error_msg "Failed to create backup of ${bashrc_file}. Skipping .bashrc modifications."
-      fi
+    echo "Found ${#shell_rc_files[@]} shell configuration file(s) to check:"
+    for rc_file in "${shell_rc_files[@]}"; do
+      echo ""
+      echo_color "$CYAN" "Processing $rc_file..."
+      clean_shell_rc "$rc_file"
+    done
+    echo ""
+    echo "Please review the modified files to ensure changes are correct."
+    echo "Backups are available with the .devbox_uninstall_*.bak extension."
+    echo "You may need to run 'source <rc-file>' or open a new terminal for changes to take effect."
+  fi
+  
+  print_step "Removing shared configuration files"
+  local config_dir="${HOME}/.config/rootless-devbox"
+  if [ -d "$config_dir" ]; then
+    if rm -rf "$config_dir"; then
+      print_success "Removed Rootless-DevBox configuration directory: $config_dir"
     else
-      echo "No Rootless-DevBox specific configurations found in ${bashrc_file}."
+      print_error_msg "Failed to remove configuration directory: $config_dir"
     fi
+  else
+    echo "Configuration directory not found: $config_dir"
   fi
 
   print_step "Optionally removing Nix directory"
@@ -199,8 +261,8 @@ main() {
   echo ""
   print_success "Rootless-DevBox uninstallation process complete."
   echo "Please check any output above for details or manual steps required."
-  echo "If you had sourced changes from ~/.bashrc, you might need to open a new terminal"
-  echo "or re-source your ~/.bashrc for all changes to fully apply."
+  echo "If you had sourced changes from shell rc files, you might need to open a new terminal"
+  echo "or re-source your shell configuration for all changes to fully apply."
 }
 
 # Run the main function
