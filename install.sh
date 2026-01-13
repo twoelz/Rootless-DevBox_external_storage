@@ -303,12 +303,18 @@ setup_auto_chroot_if_requested() {
       fi
     else
       if ! grep -q "# Rootless-DevBox: Auto-start nix-chroot" "$shell_file_expanded"; then
+        # Determine the correct shell to exec (bash or zsh)
+        local exec_shell="bash"
+        if [ "$shell_name" = "zsh" ]; then
+          exec_shell="zsh"
+        fi
+        
         echo '' >> "$shell_file_expanded"
         echo '# Rootless-DevBox: Auto-start nix-chroot for global packages' >> "$shell_file_expanded"
-        echo '# Set SKIP_NIX_CHROOT=1 to bypass (e.g., SKIP_NIX_CHROOT=1 bash)' >> "$shell_file_expanded"
+        echo "# Set SKIP_NIX_CHROOT=1 to bypass (e.g., SKIP_NIX_CHROOT=1 ${exec_shell})" >> "$shell_file_expanded"
         echo 'if [[ $- == *i* ]] && [ -z "$NIX_CHROOT" ] && [ -z "$SKIP_NIX_CHROOT" ]; then' >> "$shell_file_expanded"
         echo '  if [ -x "$HOME/.local/bin/nix-user-chroot" ]; then' >> "$shell_file_expanded"
-        echo "    exec \$HOME/.local/bin/nix-user-chroot ${nix_dir} env NIX_CHROOT=1 bash -l" >> "$shell_file_expanded"
+        echo "    exec \$HOME/.local/bin/nix-user-chroot ${nix_dir} env NIX_CHROOT=1 ${exec_shell} -l" >> "$shell_file_expanded"
         echo '  fi' >> "$shell_file_expanded"
         echo 'fi' >> "$shell_file_expanded"
         print_success "Added auto-chroot to $shell_file"
@@ -322,7 +328,8 @@ setup_auto_chroot_if_requested() {
   echo_color "$GREY" "  Bypass anytime with: SKIP_NIX_CHROOT=1 bash (or fish/zsh)"
 }
 
-# Setup Nix cache/data symlinks if using custom location
+# Setup Nix cache symlink if using custom location
+# Data/database stays local for reliability (small size, critical for Nix operation)
 setup_nix_cache_symlinks() {
   local nix_dir="$1"
   
@@ -332,37 +339,35 @@ setup_nix_cache_symlinks() {
   fi
   
   echo ""
-  echo_color "$CYAN" "Setting up Nix cache/data directories on external storage..."
+  echo_color "$CYAN" "Setting up Nix cache directory on external storage..."
   
   local nix_parent_dir=$(dirname "${nix_dir}")
   local nix_cache_target="${nix_parent_dir}/cache/nix"
-  local nix_data_target="${nix_parent_dir}/data/nix"
   
-  # Create target directories on external storage
+  # Create target directory on external storage
   mkdir -p "${nix_cache_target}"
-  mkdir -p "${nix_data_target}"
   
-  # Ensure XDG parent directories exist
+  # Ensure XDG parent directory exists
   mkdir -p "${HOME}/.cache"
-  mkdir -p "${HOME}/.local/share"
   
-  # Create symlinks (backup existing directories if needed)
-  if [ -e "${HOME}/.cache/nix" ] && [ ! -L "${HOME}/.cache/nix" ]; then
+  # Create symlink (backup existing directory if needed)
+  if [ -L "${HOME}/.cache/nix" ]; then
+    # Already a symlink - check if it points to the same location
+    local existing_target=$(readlink -f "${HOME}/.cache/nix" 2>/dev/null || readlink "${HOME}/.cache/nix")
+    if [ "$existing_target" != "${nix_cache_target}" ] && [ -n "$existing_target" ]; then
+      echo_color "$YELLOW" "Warning: ~/.cache/nix already symlinks to: $existing_target"
+      echo_color "$YELLOW" "This will be changed to: ${nix_cache_target}"
+    fi
+  elif [ -e "${HOME}/.cache/nix" ]; then
+    # Exists as a real directory
     echo_color "$YELLOW" "Backing up existing ${HOME}/.cache/nix to ${HOME}/.cache/nix.backup"
     mv "${HOME}/.cache/nix" "${HOME}/.cache/nix.backup"
   fi
   ln -sfn "${nix_cache_target}" "${HOME}/.cache/nix"
   print_success "Symlinked ~/.cache/nix → ${nix_cache_target}"
   
-  if [ -e "${HOME}/.local/share/nix" ] && [ ! -L "${HOME}/.local/share/nix" ]; then
-    echo_color "$YELLOW" "Backing up existing ${HOME}/.local/share/nix to ${HOME}/.local/share/nix.backup"
-    mv "${HOME}/.local/share/nix" "${HOME}/.local/share/nix.backup"
-  fi
-  ln -sfn "${nix_data_target}" "${HOME}/.local/share/nix"
-  print_success "Symlinked ~/.local/share/nix → ${nix_data_target}"
-  
-  echo_color "$GREEN" "✓ Nix will use external storage for cache/data"
-  echo_color "$GREY" "  Other applications remain unaffected and use standard XDG locations"
+  echo_color "$GREEN" "✓ Nix cache on external storage (saves space, safe to clear)"
+  echo_color "$GREY" "  Database remains in ~/.local/share/nix (local, small, critical)"
 }
 
 # Ask user for Nix installation directory
@@ -390,9 +395,9 @@ ask_nix_directory() {
       custom_path="${custom_path/#\~/$HOME}"
       
       if [ -z "$custom_path" ]; then
-        echo_color "$YELLOW" "No path provided. Using default location."
-        export NIX_BASE_DIR="${HOME}/.nix"
-        break
+        echo_color "$YELLOW" "No path provided. Using default location." >&2
+        echo "${HOME}/.nix"
+        return 0
       fi
       
       # Validate the path
@@ -412,19 +417,20 @@ ask_nix_directory() {
         
         if [[ "$validation_choice" == "1" ]]; then
           if mkdir -p "$parent_dir" 2>/dev/null; then
-            print_success "Created directory: $parent_dir"
-            export NIX_BASE_DIR="${custom_path}/.nix"
-            echo_color "$GREEN" "Nix will be installed at: ${NIX_BASE_DIR}"
-            break
+            print_success "Created directory: $parent_dir" >&2
+            local result_path="${custom_path}/.nix"
+            echo_color "$GREEN" "Nix will be installed at: ${result_path}" >&2
+            echo "$result_path"
+            return 0
           else
             echo_color "$RED" "Failed to create directory. You may need appropriate permissions."
             echo_color "$YELLOW" "Please try a different location or use sudo to create the directory manually."
             continue
           fi
         elif [[ "$validation_choice" == "3" ]]; then
-          echo_color "$GREEN" "Using default location: ${HOME}/.nix"
-          export NIX_BASE_DIR="${HOME}/.nix"
-          break
+          echo_color "$GREEN" "Using default location: ${HOME}/.nix" >&2
+          echo "${HOME}/.nix"
+          return 0
         else
           # Continue loop to try again (choice 2 or invalid input)
           continue
@@ -440,23 +446,25 @@ ask_nix_directory() {
         read -r permission_choice
         
         if [[ "$permission_choice" == "2" ]]; then
-          echo_color "$GREEN" "Using default location: ${HOME}/.nix"
-          export NIX_BASE_DIR="${HOME}/.nix"
-          break
+          echo_color "$GREEN" "Using default location: ${HOME}/.nix" >&2
+          echo "${HOME}/.nix"
+          return 0
         else
           # Continue loop to try again
           continue
         fi
       else
         # Valid path
-        export NIX_BASE_DIR="${custom_path}/.nix"
-        echo_color "$GREEN" "Nix will be installed at: ${NIX_BASE_DIR}"
-        break
+        local result_path="${custom_path}/.nix"
+        echo_color "$GREEN" "Nix will be installed at: ${result_path}" >&2
+        echo "$result_path"
+        return 0
       fi
     done
   else
-    echo_color "$GREEN" "Using default location: ${HOME}/.nix"
-    export NIX_BASE_DIR="${HOME}/.nix"
+    echo_color "$GREEN" "Using default location: ${HOME}/.nix" >&2
+    echo "${HOME}/.nix"
+    return 0
   fi
 }
 
@@ -466,16 +474,7 @@ main() {
   local devbox_path="${local_bin_dir}/devbox"
   local nix_chroot_path="${local_bin_dir}/nix-chroot"
   local nix_user_chroot_path="${local_bin_dir}/nix-user-chroot"
-  # NIX_BASE_DIR is set by ask_nix_directory() or can be pre-set by user
-  local nix_symlinked_path="${NIX_BASE_DIR:-${HOME}/.nix}"
-  local nix_dir=$(readlink -f "${nix_symlinked_path}")
-
-  # Check if readlink succeeded (optional, but good)
-  if [ -z "$nix_dir" ]; then
-    echo "ERROR: Could not resolve symlink for ${nix_symlinked_path}. Aborting."
-    exit 1
-  fi
-
+  local nix_dir=""
   local nix_user_chroot_version="1.2.2"
   local arch=$(get_architecture)
   local temp_dir=$(create_temp_dir)
@@ -495,7 +494,15 @@ main() {
   check_user_namespace_support
   
   # Ask user where to install Nix
-  ask_nix_directory
+  nix_dir=$(ask_nix_directory)
+  
+  if [ -z "$nix_dir" ]; then
+    print_error "Failed to determine Nix installation directory."
+    exit 1
+  fi
+  
+  # Strip trailing slash if present to avoid path issues
+  nix_dir="${nix_dir%/}"
 
   # Step 1: Create ~/.local/bin directory
   print_step "Creating local bin directory"

@@ -1,6 +1,50 @@
-# Rootless-DevBox
+# Rootless-DevBox（특정/외부 nix 캐시 폴더 포함）
 
-sudo나 root 권한 없이 루트리스 환경에서 Devbox를 자동으로 설치할 수 있는 간단한 솔루션입니다.
+sudo나 root 권한 없이 루트리스 환경에서 Devbox를 자동으로 설치할 수 있는 간단한 솔루션입니다. 원본 버전: https://github.com/nebstudio/Rootless-DevBox
+
+**포크 정보:**
+https://github.com/twoelz 의 이 포크는 외부 스토리지 설치를 지원하고 전체 설치 경험을 개선하기 위한 여러 기능 개선 사항을 추가합니다. 주요 추가 사항은 다음과 같습니다:
+
+**주요 기능:**
+1. **사용자 지정 Nix 스토어 위치**: 하드코딩된 `~/.nix` 대신 외부 스토리지(예: 42 school의 `/sgoinfre`)에 Nix 스토어를 설치하기 위한 대화형 프롬프트
+2. **스마트 캐시 심볼릭 링크**: 캐시만 외부 스토리지에 심볼릭 링크하고 중요한 데이터베이스는 로컬에 유지
+3. **멀티 셸 지원**: bash, zsh, fish 셸 구성(원본은 bash만 지원)
+4. **중국 네트워크 미러**: 중국 본토 사용자를 위한 선택적 SJTU/Tsinghua 미러
+5. **자동 chroot 기능**: 셸 시작 시 nix-chroot로의 선택적 자동 진입
+6. **향상된 제거 프로그램**: 사용자 지정 설치 위치를 감지하고 모든 구성 요소를 안전하게 제거
+
+다음은 심볼릭 링크 접근 방식에 대한 자세한 설명입니다:
+
+사용자 지정 위치(예: 외부 스토리지)에 Nix를 설치할 때 설치 프로그램은 Nix 캐시 디렉토리에 대한 심볼릭 링크를 만듭니다:
+
+~/.cache/nix → <사용자지정위치>/cache/nix
+
+**캐시만 사용하는 이유(데이터/데이터베이스는 제외):**
+
+- 캐시 디렉토리: 크기가 큼(GB), 재생성 가능, 안전하게 지울 수 있음 → 외부 스토리지로
+- 데이터 디렉토리: 작음(MB), 중요한 SQLite 데이터베이스 포함 → 신뢰성과 성능을 위해 로컬에 유지
+
+**이점:**
+
+- 공간 절약: Nix의 다운로드 캐시(스토어 외 최대 소비자)가 외부 스토리지에 존재
+- 일관성: 전역 Nix 명령과 nix-chroot 모두 동일한 캐시를 사용하여 중복 방지
+- 격리: Nix 캐시만 리디렉션됨; 다른 애플리케이션은 ~/.cache를 정상적으로 계속 사용
+- 신뢰성: 중요한 데이터베이스는 빠르고 안정적인 로컬 스토리지(~/.local/share/nix)에 유지
+- Nix 호환: Nix 스토어 자체(~/.nix 또는 사용자 지정 위치)는 실제 디렉토리로 유지(심볼릭 링크 아님)
+
+**동작:**
+
+- 기본 설치(~/.nix): 심볼릭 링크가 생성되지 않고 표준 XDG 위치 사용
+- 사용자 지정 설치: 캐시 심볼릭 링크 생성, 기존 ~/.cache/nix 디렉토리 백업
+- 데이터베이스/상태는 안전을 위해 ~/.local/share/nix에 유지
+
+이 접근 방식은 시스템 전체의 모든 애플리케이션에 영향을 미치는 전역 XDG_CACHE_HOME 및 XDG_DATA_HOME 변수 설정을 피합니다.
+
+**셸 구성:**
+설치 프로그램이 셸 dotfiles(bash/zsh/fish)에 구성을 추가합니다. 이 구성은:
+- `~/.local/bin`과 `~/.nix-profile/bin`을 PATH에 추가(devbox/nix 명령 실행용)
+- Nix 자체 환경 설정 소스
+- XDG 변수를 전역적으로 설정하지 않음(캐시 리디렉션은 대신 심볼릭 링크 사용)
 
 [![GitHub License](https://img.shields.io/github/license/nebstudio/Rootless-DevBox)](https://github.com/nebstudio/Rootless-DevBox/blob/main/LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/nebstudio/Rootless-DevBox?style=social)](https://github.com/nebstudio/Rootless-DevBox/stargazers)

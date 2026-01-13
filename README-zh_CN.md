@@ -1,6 +1,50 @@
-# Rootless-DevBox
+# Rootless-DevBox（带特定/外部 nix 缓存文件夹）
 
-一个无需 sudo 或 root 权限即可在无根环境下自动安装 Devbox 的简单解决方案。
+一个无需 sudo 或 root 权限即可在无根环境下自动安装 Devbox 的简单解决方案。原始版本：https://github.com/nebstudio/Rootless-DevBox
+
+**Fork 信息:**
+来自 https://github.com/twoelz 的此 fork 添加了多项增强功能，以支持外部存储安装并改善整体安装体验。主要添加内容包括：
+
+**主要功能：**
+1. **自定义 Nix 存储位置**：交互式提示在外部存储（例如 42 school 的 `/sgoinfre`）上安装 Nix 存储，而不是硬编码的 `~/.nix`
+2. **智能缓存符号链接**：仅将缓存符号链接到外部存储，将关键数据库保留在本地
+3. **多 Shell 支持**：配置 bash、zsh 和 fish shell（原始版本仅支持 bash）
+4. **中国网络镜像**：为中国大陆用户提供可选的 SJTU/清华镜像
+5. **自动 chroot 功能**：shell 启动时可选自动进入 nix-chroot
+6. **增强的卸载程序**：检测自定义安装位置并安全删除所有组件
+
+以下是符号链接方法的详细描述：
+
+在自定义位置（例如外部存储）安装 Nix 时，安装程序会为 Nix 缓存目录创建符号链接：
+
+~/.cache/nix → <自定义位置>/cache/nix
+
+**为什么只有缓存（不包括数据/数据库）：**
+
+- 缓存目录：大（GB 级别），可重新生成，清除安全 → 进入外部存储
+- 数据目录：小（MB 级别），包含关键 SQLite 数据库 → 保持本地以确保可靠性和性能
+
+**优势：**
+
+- 节省空间：Nix 的下载缓存（存储之外最大的消费者）位于外部存储
+- 一致性：全局 Nix 命令和 nix-chroot 都使用相同的缓存，防止重复
+- 隔离：只有 Nix 缓存被重定向；其他应用程序继续正常使用 ~/.cache
+- 可靠性：关键数据库保留在快速可靠的本地存储中（~/.local/share/nix）
+- Nix 兼容：Nix 存储本身（~/.nix 或自定义位置）保持为真实目录（不是符号链接）
+
+**行为：**
+
+- 默认安装（~/.nix）：不创建符号链接，使用标准 XDG 位置
+- 自定义安装：创建缓存符号链接，备份任何现有的 ~/.cache/nix 目录
+- 数据库/状态保留在 ~/.local/share/nix 中以确保安全
+
+这种方法避免了设置会影响整个系统所有应用程序的全局 XDG_CACHE_HOME 和 XDG_DATA_HOME 变量。
+
+**Shell 配置：**
+安装程序向您的 shell dotfiles（bash/zsh/fish）添加配置。此配置：
+- 将 `~/.local/bin` 和 `~/.nix-profile/bin` 添加到 PATH（用于运行 devbox/nix 命令）
+- 引用 Nix 自己的环境设置
+- 不全局设置 XDG 变量（缓存重定向使用符号链接代替）
 
 [![GitHub License](https://img.shields.io/github/license/nebstudio/Rootless-DevBox)](https://github.com/nebstudio/Rootless-DevBox/blob/main/LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/nebstudio/Rootless-DevBox?style=social)](https://github.com/nebstudio/Rootless-DevBox/stargazers)

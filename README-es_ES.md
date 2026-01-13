@@ -1,14 +1,58 @@
-# Rootless-DevBox
+# Rootless-DevBox (con carpeta de caché de nix específica/externa)
 
-Una solución simple y automatizada para instalar Devbox en un entorno sin root, sin requerir privilegios de sudo o root.
+Una solución simple y automatizada para instalar Devbox en un entorno sin root, sin requerir privilegios de sudo o root. Versión original de: https://github.com/nebstudio/Rootless-DevBox.
+
+**Información del Fork:**
+Este fork de https://github.com/twoelz añade varias mejoras para soportar instalaciones en almacenamiento externo y mejorar la experiencia general de instalación. Las adiciones clave incluyen:
+
+**Características principales:**
+1. **Ubicación personalizada del almacén Nix**: Prompt interactivo para instalar el almacén Nix en almacenamiento externo (ej., `/sgoinfre` en 42 school) en lugar de `~/.nix` fijo
+2. **Enlace simbólico inteligente de caché**: Solo enlaza la caché al almacenamiento externo, mantiene la base de datos crítica local
+3. **Soporte multi-shell**: Configura bash, zsh y fish (el original solo soportaba bash)
+4. **Mirrors de red de China**: Mirrors opcionales SJTU/Tsinghua para usuarios en China continental
+5. **Función auto-chroot**: Entrada automática opcional a nix-chroot al iniciar shell
+6. **Desinstalador mejorado**: Detecta ubicaciones de instalación personalizadas y elimina todos los componentes de forma segura
+
+A continuación se presenta una descripción detallada del enfoque de enlaces simbólicos:
+
+Al instalar Nix en una ubicación personalizada (por ejemplo, almacenamiento externo), el instalador crea un enlace simbólico para el directorio de caché de Nix:
+
+~/.cache/nix → <ubicación-personalizada>/cache/nix
+
+**Por qué solo caché (no datos/base de datos):**
+
+- Directorio de caché: Grande (GBs), regenerable, seguro de limpiar → va al almacenamiento externo
+- Directorio de datos: Pequeño (~MBs), contiene base de datos SQLite crítica → permanece local para confiabilidad y rendimiento
+
+**Beneficios:**
+
+- Ahorro de espacio: La caché de descarga de Nix (mayor consumidor fuera del almacén) vive en almacenamiento externo
+- Consistencia: Tanto comandos Nix globales como nix-chroot usan la misma caché, evitando duplicación
+- Aislamiento: Solo la caché de Nix se redirige; otras aplicaciones continúan usando ~/.cache normalmente
+- Confiabilidad: La base de datos crítica permanece en almacenamiento local rápido y confiable (~/.local/share/nix)
+- Compatible con Nix: El almacén Nix mismo (~/.nix o ubicación personalizada) permanece como un directorio real (no un enlace simbólico)
+
+**Comportamiento:**
+
+- Instalación predeterminada (~/.nix): No se crean enlaces simbólicos, usa ubicaciones XDG estándar
+- Instalación personalizada: Crea enlace simbólico de caché, respalda cualquier directorio ~/.cache/nix existente
+- Base de datos/estado permanece en ~/.local/share/nix por seguridad
+
+Este enfoque evita configurar variables globales XDG_CACHE_HOME y XDG_DATA_HOME que afectarían todas las aplicaciones en todo el sistema.
+
+**Configuración de Shell:**
+El instalador añade configuración a tus archivos dotfiles de shell (bash/zsh/fish). Esta configuración:
+- Añade `~/.local/bin` y `~/.nix-profile/bin` a PATH (para ejecutar comandos devbox/nix)
+- Incluye la configuración de entorno propia de Nix
+- NO establece variables XDG globalmente (la redirección de caché usa enlaces simbólicos en su lugar)
 
 [![GitHub License](https://img.shields.io/github/license/nebstudio/Rootless-DevBox)](https://github.com/nebstudio/Rootless-DevBox/blob/main/LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/nebstudio/Rootless-DevBox?style=social)](https://github.com/nebstudio/Rootless-DevBox/stargazers)
 [![GitHub Issues](https://img.shields.io/github/issues/nebstudio/Rootless-DevBox)](https://github.com/nebstudio/Rootless-DevBox/issues)
 
-## ¿Qué es Rootless-DevBox?
+## ¿Qué es Rootless-DevBox (con carpetas específicas de nix)?
 
-Rootless-DevBox es un proyecto que permite a los usuarios instalar y usar [Devbox](https://github.com/jetify-com/devbox) en entornos donde no tienen acceso root, como hosting compartido, sistemas universitarios o entornos corporativos restringidos. Utiliza [nix-user-chroot](https://github.com/nix-community/nix-user-chroot) para crear un entorno aislado donde Nix y Devbox pueden ejecutarse sin privilegios elevados.
+Rootless-DevBox es un proyecto que permite a los usuarios instalar y usar [Devbox](https://github.com/jetify-com/devbox) en entornos donde no tienen acceso root, como hosting compartido, sistemas universitarios o entornos corporativos con permisos restringidos. Utiliza [nix-user-chroot](https://github.com/nix-community/nix-user-chroot) para crear un entorno contenido donde Nix y Devbox pueden ejecutarse sin requerir privilegios elevados.
 
 ## Características
 
@@ -17,6 +61,10 @@ Rootless-DevBox es un proyecto que permite a los usuarios instalar y usar [Devbo
 - 🚀 **Instalación fácil**: Un solo script para configurar todo automáticamente
 - 💻 **Multiplataforma**: Funciona en varias distribuciones y arquitecturas de Linux
 - 🔒 **Seguro**: Solo modifica tu entorno de usuario, no los archivos del sistema
+- 🌏 **Compatible con redes de China**: El script puede configurar automáticamente Nix para usar mirrors de la Universidad Tsinghua para usuarios en China continental u otros entornos con redes restringidas
+
+> **Nota:**  
+> Aunque el script intenta minimizar problemas de red añadiendo el mirror Nix de Tsinghua para usuarios en China continental o redes restringidas, es posible que **aún necesites usar temporalmente un proxy** para acceder a recursos en GitHub u otros sitios que estén bloqueados o limitados en tu región.
 
 ## Inicio rápido
 
@@ -40,7 +88,9 @@ chmod +x rootless-devbox-installer.sh
 
 ## ¿Cómo funciona?
 
-Rootless-DevBox configura tu entorno en 3 pasos principales:
+Rootless-DevBox (con carpetas configuradas) configura tu entorno en 4 pasos principales:
+
+0. Ejecuta un script para configurar carpetas/directorios de nix en una dirección separada
 
 1. **Instala nix-user-chroot**: Descarga y configura una herramienta que crea un entorno chroot en espacio de usuario
 2. **Crea el entorno Nix**: Configura un entorno Nix aislado en tu directorio de usuario

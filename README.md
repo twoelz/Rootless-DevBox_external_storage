@@ -1,10 +1,46 @@
-# Rootless-DevBox (with specific nix folders)
+# Rootless-DevBox (with specific/external nix cache folder)
 
 A simple, automated solution for installing Devbox in a rootless environment without requiring sudo or root privileges. Original version from: https://github.com/nebstudio/Rootless-DevBox.
-This fork by https://github.com/twoelz just adds functions to the script to setup a separate store folder for nix.
-If not needed, it will put the store in the default .nix folder in the home dir.
 
-Note: it also adds some global vars to shell dotfiles (zsh, bash & fish) to help nix use the custom folder.
+**Fork info:**
+This fork by https://github.com/twoelz adds several enhancements to support external storage installations and improve the overall installation experience. Key additions include:
+
+**Main Features:**
+1. **Custom Nix Store Location**: Interactive prompt to install Nix store on external storage (e.g., `/sgoinfre` at 42 school) instead of hardcoded `~/.nix`
+2. **Smart Cache Symlinking**: Only symlinks cache to external storage, keeps critical database local
+3. **Multi-Shell Support**: Configures bash, zsh, and fish shells (original only supported bash)
+4. **China Network Mirrors**: Optional SJTU/Tsinghua mirrors for users in mainland China
+5. **Auto-chroot Feature**: Optional automatic entry to nix-chroot on shell startup
+6. **Enhanced Uninstaller**: Detects custom installation locations and safely removes all components
+
+Below is a detailed description of the symlink approach:
+
+When installing Nix to a custom location (e.g., external storage), the installer creates a symlink for the Nix cache directory:
+
+~/.cache/nix → <custom-location>/cache/nix
+Why only cache (not data/database):
+
+Cache directory: Large (GBs), regenerable, safe to clear → goes to external storage
+Data directory: Small (~MBs), contains critical SQLite database → stays local for reliability and performance
+Benefits:
+
+Space savings: Nix's download cache (largest non-store consumer) lives on external storage
+Consistency: Both global Nix commands and nix-chroot use the same cache, preventing duplication
+Isolation: Only Nix cache is redirected; other applications continue using ~/.cache normally
+Reliability: Critical database remains on fast, reliable local storage (~/.local/share/nix)
+Nix-compliant: The Nix store itself (~/.nix or custom location) remains a real directory (not a symlink)
+Behavior:
+
+Default installation (~/.nix): No symlinks created, uses standard XDG locations
+Custom installation: Creates cache symlink, backs up any existing ~/.cache/nix directory
+Database/state remains in ~/.local/share/nix for safety
+This approach avoids setting global XDG_CACHE_HOME and XDG_DATA_HOME variables which would affect all applications system-wide.
+
+**Shell Configuration:**
+The installer adds configuration to your shell dotfiles (bash/zsh/fish). This configuration:
+- Adds `~/.local/bin` and `~/.nix-profile/bin` to PATH (for running devbox/nix commands)
+- Sources Nix's own environment setup
+- Does NOT set XDG variables globally (cache redirection uses symlinks instead)
 
 [![GitHub License](https://img.shields.io/github/license/nebstudio/Rootless-DevBox)](https://github.com/nebstudio/Rootless-DevBox/blob/main/LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/nebstudio/Rootless-DevBox?style=social)](https://github.com/nebstudio/Rootless-DevBox/stargazers)

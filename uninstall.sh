@@ -133,22 +133,22 @@ clean_shell_rc() {
 
 # Detect Nix installation directory from shell rc files
 detect_nix_directory() {
-  local shell_rc_files=()
-  [[ -f ~/.bashrc ]] && shell_rc_files+=("~/.bashrc")
-  [[ -f ~/.zshrc ]] && shell_rc_files+=("~/.zshrc")
-  [[ -f ~/.config/fish/config.fish ]] && shell_rc_files+=("~/.config/fish/config.fish")
+  # Check for nix-chroot script which contains the actual nix directory path
+  local nix_chroot_script="${HOME}/.local/bin/nix-chroot"
   
-  # Try to extract NIX_BASE_DIR from shell rc files
-  for rc_file in "${shell_rc_files[@]}"; do
-    local rc_file_expanded="${rc_file/#\~/$HOME}"
-    if [ -f "$rc_file_expanded" ]; then
-      local detected_dir=$(grep -oP '(?<=export NIX_BASE_DIR=")[^"]+' "$rc_file_expanded" 2>/dev/null | head -1)
-      if [ -n "$detected_dir" ]; then
+  if [ -f "$nix_chroot_script" ]; then
+    # Extract the directory path from the nix-user-chroot command line
+    local detected_dir=$(grep -oP 'nix-user-chroot \K[^ ]+' "$nix_chroot_script" 2>/dev/null | head -1)
+    if [ -n "$detected_dir" ]; then
+      # Expand any shell variables like ${HOME}
+      # Basic validation: path should start with / or ~ or $
+      if [[ "$detected_dir" =~ ^[/~$] ]]; then
+        detected_dir=$(eval echo "$detected_dir")
         echo "$detected_dir"
         return 0
       fi
     fi
-  done
+  fi
   
   # Fallback to default if not found
   echo "${HOME}/.nix"
