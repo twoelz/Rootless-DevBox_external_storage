@@ -73,7 +73,7 @@ Rootless-DevBox는 [Devbox](https://github.com/jetify-com/devbox)를 루트 권�
 
 ```bash
 # 설치 스크립트 다운로드
-curl -o rootless-devbox-installer.sh https://raw.githubusercontent.com/nebstudio/Rootless-DevBox/main/install.sh
+curl -o rootless-devbox-installer.sh https://raw.githubusercontent.com/twoelz/Rootless-DevBox/main/install.sh
 
 # 실행 권한 부여
 chmod +x rootless-devbox-installer.sh
@@ -169,7 +169,7 @@ Rootless-DevBox를 제거하려면 두 가지 방법이 있습니다:
 
 ```bash
 # 언인스톨러 다운로드
-curl -o rootless-devbox-uninstaller.sh https://raw.githubusercontent.com/nebstudio/Rootless-DevBox/main/uninstall.sh
+curl -o rootless-devbox-uninstaller.sh https://raw.githubusercontent.com/twoelz/Rootless-DevBox/main/uninstall.sh
 
 # 실행 권한 부여
 chmod +x rootless-devbox-uninstaller.sh

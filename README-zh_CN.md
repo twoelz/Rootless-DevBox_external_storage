@@ -76,7 +76,7 @@ Rootless-DevBox 让用户可以在没有 root 权限的环境（如共享主机�
 
 ```bash
 # 下载安装脚本
-curl -o rootless-devbox-installer.sh https://raw.githubusercontent.com/nebstudio/Rootless-DevBox/main/install.sh
+curl -o rootless-devbox-installer.sh https://raw.githubusercontent.com/twoelz/Rootless-DevBox/main/install.sh
 
 # 赋予执行权限
 chmod +x rootless-devbox-installer.sh
@@ -172,7 +172,7 @@ A: 可能是磁盘配额或空间不足。用 `df -h ~` 检查空间。
 
 ```bash
 # 下载卸载脚本
-curl -o rootless-devbox-uninstaller.sh https://raw.githubusercontent.com/nebstudio/Rootless-DevBox/main/uninstall.sh
+curl -o rootless-devbox-uninstaller.sh https://raw.githubusercontent.com/twoelz/Rootless-DevBox/main/uninstall.sh
 
 # 赋予执行权限
 chmod +x rootless-devbox-uninstaller.sh

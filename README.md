@@ -73,7 +73,7 @@ Simply run this command in your terminal:
 
 ```bash
 # Download the installer
-curl -o rootless-devbox-installer.sh https://raw.githubusercontent.com/nebstudio/Rootless-DevBox/main/install.sh
+curl -o rootless-devbox-installer.sh https://raw.githubusercontent.com/twoelz/Rootless-DevBox/main/install.sh
 
 # Make it executable
 chmod +x rootless-devbox-installer.sh
@@ -174,7 +174,7 @@ We provide an uninstall script that can remove most components:
 
 ```bash
 # Download the uninstaller
-curl -o rootless-devbox-uninstaller.sh https://raw.githubusercontent.com/nebstudio/Rootless-DevBox/main/uninstall.sh
+curl -o rootless-devbox-uninstaller.sh https://raw.githubusercontent.com/twoelz/Rootless-DevBox/main/uninstall.sh
 
 # Make it executable
 chmod +x rootless-devbox-uninstaller.sh

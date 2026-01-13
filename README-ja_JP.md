@@ -74,7 +74,7 @@ Rootless-DevBoxは、[Devbox](https://github.com/jetify-com/devbox) をroot権�
 
 ```bash
 # インストーラーをダウンロード
-curl -o rootless-devbox-installer.sh https://raw.githubusercontent.com/nebstudio/Rootless-DevBox/main/install.sh
+curl -o rootless-devbox-installer.sh https://raw.githubusercontent.com/twoelz/Rootless-DevBox/main/install.sh
 
 # 実行権限を付与
 chmod +x rootless-devbox-installer.sh
@@ -170,7 +170,7 @@ Rootless-DevBoxを削除するには2つの方法があります：
 
 ```bash
 # アンインストーラーをダウンロード
-curl -o rootless-devbox-uninstaller.sh https://raw.githubusercontent.com/nebstudio/Rootless-DevBox/main/uninstall.sh
+curl -o rootless-devbox-uninstaller.sh https://raw.githubusercontent.com/twoelz/Rootless-DevBox/main/uninstall.sh
 
 # 実行権限を付与
 chmod +x rootless-devbox-uninstaller.sh
