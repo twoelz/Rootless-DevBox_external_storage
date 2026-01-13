@@ -372,24 +372,24 @@ setup_nix_cache_symlinks() {
 
 # Ask user for Nix installation directory
 ask_nix_directory() {
-  echo ""
-  echo_color "$CYAN" "Where would you like to install Nix?"
-  echo "The Nix store requires significant disk space and will be located at this path."
-  echo ""
-  echo "Options:"
-  echo "  1. Default location (${HOME}/.nix)"
-  echo "  2. Custom location (e.g., external storage like 'network_drive')"
-  echo ""
-  echo_color "$YELLOW" "Enter '1' for default, or '2' to specify a custom path:"
-  read -r nix_dir_choice
+  echo "" >&2
+  echo_color "$CYAN" "Where would you like to install Nix?" >&2
+  echo "The Nix store requires significant disk space and will be located at this path." >&2
+  echo "" >&2
+  echo "Options:" >&2
+  echo "  1. Default location (${HOME}/.nix)" >&2
+  echo "  2. Custom location (e.g., external storage like 'network_drive')" >&2
+  echo "" >&2
+  echo_color "$YELLOW" "Enter '1' for default, or '2' to specify a custom path:" >&2
+  read -r nix_dir_choice </dev/tty
   
   if [[ "$nix_dir_choice" == "2" ]]; then
     while true; do
-      echo ""
-      echo "Enter the custom directory path (without the trailing '/.nix'):"
-      echo_color "$GREY" "Example: /mnt/external/nix or ${HOME}/custom_storage/nix"
-      echo_color "$GREY" "The installer will automatically append '/.nix' to your path"
-      read -r custom_path
+      echo "" >&2
+      echo "Enter the custom directory path (without the trailing '/.nix'):" >&2
+      echo_color "$GREY" "Example: /mnt/external/nix or ${HOME}/custom_storage/nix" >&2
+      echo_color "$GREY" "The installer will automatically append '/.nix' to your path" >&2
+      read -r custom_path </dev/tty
       
       # Expand tilde if present
       custom_path="${custom_path/#\~/$HOME}"
@@ -405,15 +405,15 @@ ask_nix_directory() {
       
       # Check if parent directory exists or can be accessed
       if [ ! -d "$parent_dir" ]; then
-        echo_color "$RED" "Error: Parent directory '$parent_dir' does not exist."
-        echo ""
-        echo "Options:"
-        echo "  1. Create the parent directory now"
-        echo "  2. Try a different path"
-        echo "  3. Use default location (${HOME}/.nix)"
-        echo ""
-        echo_color "$YELLOW" "Enter your choice (1/2/3):"
-        read -r validation_choice
+        echo_color "$RED" "Error: Parent directory '$parent_dir' does not exist." >&2
+        echo "" >&2
+        echo "Options:" >&2
+        echo "  1. Create the parent directory now" >&2
+        echo "  2. Try a different path" >&2
+        echo "  3. Use default location (${HOME}/.nix)" >&2
+        echo "" >&2
+        echo_color "$YELLOW" "Enter your choice (1/2/3):" >&2
+        read -r validation_choice </dev/tty
         
         if [[ "$validation_choice" == "1" ]]; then
           if mkdir -p "$parent_dir" 2>/dev/null; then
@@ -423,8 +423,8 @@ ask_nix_directory() {
             echo "$result_path"
             return 0
           else
-            echo_color "$RED" "Failed to create directory. You may need appropriate permissions."
-            echo_color "$YELLOW" "Please try a different location or use sudo to create the directory manually."
+            echo_color "$RED" "Failed to create directory. You may need appropriate permissions." >&2
+            echo_color "$YELLOW" "Please try a different location or use sudo to create the directory manually." >&2
             continue
           fi
         elif [[ "$validation_choice" == "3" ]]; then
@@ -436,14 +436,14 @@ ask_nix_directory() {
           continue
         fi
       elif [ ! -w "$parent_dir" ]; then
-        echo_color "$RED" "Error: No write permission for '$parent_dir'."
-        echo ""
-        echo "Options:"
-        echo "  1. Try a different path"
-        echo "  2. Use default location (${HOME}/.nix)"
-        echo ""
-        echo_color "$YELLOW" "Enter your choice (1/2):"
-        read -r permission_choice
+        echo_color "$RED" "Error: No write permission for '$parent_dir'." >&2
+        echo "" >&2
+        echo "Options:" >&2
+        echo "  1. Try a different path" >&2
+        echo "  2. Use default location (${HOME}/.nix)" >&2
+        echo "" >&2
+        echo_color "$YELLOW" "Enter your choice (1/2):" >&2
+        read -r permission_choice </dev/tty
         
         if [[ "$permission_choice" == "2" ]]; then
           echo_color "$GREEN" "Using default location: ${HOME}/.nix" >&2
